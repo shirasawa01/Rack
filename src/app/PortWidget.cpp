@@ -8,6 +8,7 @@
 #include <engine/Engine.hpp>
 #include <settings.hpp>
 #include <helpers.hpp>
+#include <osdialog.h>
 
 
 namespace rack {
@@ -150,6 +151,22 @@ struct PortCableItem : ui::ColorDotMenuItem {
 			item->color = color;
 			menu->addChild(item);
 		}
+
+		// Any color for this one cable, from the system's color picker (this fork)
+		CableWidget* cw = this->cw;
+		menu->addChild(new ui::MenuSeparator);
+		menu->addChild(createMenuItem("Custom color…", "", [=]() {
+			NVGcolor color = cw->color;
+			osdialog_color c = {uint8_t(color.r * 255.f), uint8_t(color.g * 255.f), uint8_t(color.b * 255.f), 255};
+			if (!osdialog_color_picker(&c, false))
+				return;
+			history::CableColorChange* h = new history::CableColorChange;
+			h->setCable(cw);
+			h->newColor = nvgRGB(c.r, c.g, c.b);
+			h->oldColor = cw->color;
+			APP->history->push(h);
+			cw->color = h->newColor;
+		}));
 
 		return menu;
 	}
