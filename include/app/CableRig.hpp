@@ -23,8 +23,9 @@ struct Look {
 	int subdivisions = 5;
 	/** Spline points per depth-sorted piece (flat) and per shadow piece */
 	int chunk = 10;
-	/** Body overlap past each flat piece, in spline points, hides the seams */
-	int overlap = 3;
+	/** Flat pieces meet square across the tube; the body reaches this far (px) into the next piece to hide the antialiasing hairline.
+	Longer overlaps paint over other cables lying between the two pieces in depth (cables seemed to sink into each other). */
+	float seam = 1.f;
 	float minWidth = 1.4f;
 	/** Light on the screen (upper left) for the round style's highlights */
 	float lightX = -0.45f, lightY = -0.89f;

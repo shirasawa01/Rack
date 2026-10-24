@@ -614,15 +614,37 @@ static void drawBoot(NVGcontext* vg, Entry* e, int end, double RB, bool round) {
 static void drawFlatChunk(NVGcontext* vg, Entry* e, int s, int en, float w) {
 	const std::vector<Pt>& a = e->dense;
 	Shade sh(e->color);
-	int s0 = std::max(0, s - look.overlap), e0 = std::min((int) a.size() - 1, en + look.overlap);
+	const int last = a.size() - 1;
+	nvgLineCap(vg, NVG_BUTT);
 	nvgStrokeColor(vg, sh.edge);
 	nvgStrokeWidth(vg, w + look.edgeExtra);
 	polyline(vg, a, s, en);
 	nvgStroke(vg);
 	nvgStrokeColor(vg, sh.body);
 	nvgStrokeWidth(vg, w);
-	polyline(vg, a, s0, e0);
+	nvgBeginPath(vg);
+	for (int i = s; i <= en; i++) {
+		float t = (i == s && s > 0) ? -look.seam : (i == en && en < last) ? look.seam : 0.f;
+		if (i == s)
+			nvgMoveTo(vg, a[i].x + a[i].tx * t, a[i].y + a[i].ty * t);
+		else
+			nvgLineTo(vg, a[i].x + a[i].tx * t, a[i].y + a[i].ty * t);
+	}
 	nvgStroke(vg);
+	// The cable's own ends stay round (under the boot face)
+	for (int i : {s == 0 ? 0 : -1, en == last ? last : -1}) {
+		if (i < 0)
+			continue;
+		nvgBeginPath(vg);
+		nvgCircle(vg, a[i].x, a[i].y, (w + look.edgeExtra) / 2);
+		nvgFillColor(vg, sh.edge);
+		nvgFill(vg);
+		nvgBeginPath(vg);
+		nvgCircle(vg, a[i].x, a[i].y, w / 2);
+		nvgFillColor(vg, sh.body);
+		nvgFill(vg);
+	}
+	nvgLineCap(vg, NVG_ROUND);
 }
 
 

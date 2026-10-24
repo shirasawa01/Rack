@@ -785,8 +785,8 @@ function clipSpan(a, s, e, R) {
 function drawChunk(ci, s, e) {
   const c = cables[ci], a = dense[ci], sh = SHADE[c.color];
   const w = c.lw;
-  const s0 = Math.max(0, s - 3), e0 = Math.min(a.length - 1, e + 3);
   if (P.style === "round") {
+    const s0 = Math.max(0, s - 3), e0 = Math.min(a.length - 1, e + 3);
     ctx.save(); clipSpan(a, s, e, w * 0.85);
     sh.bands.forEach(([f, col, off], k) => {
       ctx.strokeStyle = col; ctx.lineWidth = Math.max(0.6, w * f);
@@ -795,9 +795,26 @@ function drawChunk(ci, s, e) {
     ctx.restore();
     return;
   }
+  // Pieces meet square across the tube. Only the body reaches 1px into the next piece (hides the antialiasing hairline);
+  // a longer overlap would paint over other cables lying between the two pieces in depth (cables seemed to sink into each other).
+  const last = a.length - 1;
+  ctx.lineCap = "butt";
   ctx.strokeStyle = sh.edge; ctx.lineWidth = w + 1; polyline(a, s, e); ctx.stroke();
-  ctx.strokeStyle = sh.body; ctx.lineWidth = w; polyline(a, s0, e0); ctx.stroke();
+  ctx.strokeStyle = sh.body; ctx.lineWidth = w; ctx.beginPath();
+  for (let i = s; i <= e; i++) {
+    const p = a[i], t = i === s && s > 0 ? -FLAT_SEAM : i === e && e < last ? FLAT_SEAM : 0;
+    i === s ? ctx.moveTo(p.x + p.tx * t, p.y + p.ty * t) : ctx.lineTo(p.x + p.tx * t, p.y + p.ty * t);
+  }
+  ctx.stroke();
+  // the cable's own ends stay round (under the boot face)
+  for (const i of [s === 0 ? 0 : -1, e === last ? last : -1]) {
+    if (i < 0) continue;
+    ctx.beginPath(); ctx.arc(a[i].x, a[i].y, (w + 1) / 2, 0, Math.PI * 2); ctx.fillStyle = sh.edge; ctx.fill();
+    ctx.beginPath(); ctx.arc(a[i].x, a[i].y, w / 2, 0, Math.PI * 2); ctx.fillStyle = sh.body; ctx.fill();
+  }
+  ctx.lineCap = "round";
 }
+const FLAT_SEAM = 1;
 function drawBoot(ci, end) {
   const c = cables[ci], J = jacks[end ? c.b : c.a], sh = SHADE[c.color];
   const b = project(J.x, J.y, 0), t = project(J.x, J.y, LB);
