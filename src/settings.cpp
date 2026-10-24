@@ -33,6 +33,14 @@ float pixelRatio = 0.0;
 std::string uiTheme = "dark";
 float cableOpacity = 0.5;
 float cableTension = 1.0;
+bool cablePhysics = true;
+int cableStyle = 0;
+float cableStiffness = 0.9;
+float cableWeight = 0.22;
+float cableMemory = 0.75;
+float caseTilt = 12.0;
+float cableThickness = 3.8;
+float cableShadow = 0.7;
 float rackBrightness = 1.0;
 float spotlightBrightness = 0.2;
 float spotlightRadius = 300.0;
@@ -158,6 +166,15 @@ json_t* toJson() {
 	json_object_set_new(rootJ, "cableOpacity", json_real(cableOpacity));
 
 	json_object_set_new(rootJ, "cableTension", json_real(cableTension));
+
+	json_object_set_new(rootJ, "cablePhysics", json_boolean(cablePhysics));
+	json_object_set_new(rootJ, "cableStyle", json_string(cableStyle == 1 ? "round" : "flat"));
+	json_object_set_new(rootJ, "cableStiffness", json_real(cableStiffness));
+	json_object_set_new(rootJ, "cableWeight", json_real(cableWeight));
+	json_object_set_new(rootJ, "cableMemory", json_real(cableMemory));
+	json_object_set_new(rootJ, "caseTilt", json_real(caseTilt));
+	json_object_set_new(rootJ, "cableThickness", json_real(cableThickness));
+	json_object_set_new(rootJ, "cableShadow", json_real(cableShadow));
 
 	json_object_set_new(rootJ, "rackBrightness", json_real(rackBrightness));
 
@@ -353,6 +370,40 @@ void fromJson(json_t* rootJ) {
 	json_t* cableTensionJ = json_object_get(rootJ, "cableTension");
 	if (cableTensionJ)
 		cableTension = json_number_value(cableTensionJ);
+
+	json_t* cablePhysicsJ = json_object_get(rootJ, "cablePhysics");
+	if (cablePhysicsJ)
+		cablePhysics = json_boolean_value(cablePhysicsJ);
+
+	json_t* cableStyleJ = json_object_get(rootJ, "cableStyle");
+	if (cableStyleJ) {
+		const char* style = json_string_value(cableStyleJ);
+		cableStyle = (style && std::string(style) == "round") ? 1 : 0;
+	}
+
+	json_t* cableStiffnessJ = json_object_get(rootJ, "cableStiffness");
+	if (cableStiffnessJ)
+		cableStiffness = math::clamp((float) json_number_value(cableStiffnessJ), 0.f, 1.f);
+
+	json_t* cableWeightJ = json_object_get(rootJ, "cableWeight");
+	if (cableWeightJ)
+		cableWeight = math::clamp((float) json_number_value(cableWeightJ), 0.f, 1.f);
+
+	json_t* cableMemoryJ = json_object_get(rootJ, "cableMemory");
+	if (cableMemoryJ)
+		cableMemory = math::clamp((float) json_number_value(cableMemoryJ), 0.f, 1.f);
+
+	json_t* caseTiltJ = json_object_get(rootJ, "caseTilt");
+	if (caseTiltJ)
+		caseTilt = math::clamp((float) json_number_value(caseTiltJ), 0.f, 35.f);
+
+	json_t* cableThicknessJ = json_object_get(rootJ, "cableThickness");
+	if (cableThicknessJ)
+		cableThickness = math::clamp((float) json_number_value(cableThicknessJ), 2.5f, 6.f);
+
+	json_t* cableShadowJ = json_object_get(rootJ, "cableShadow");
+	if (cableShadowJ)
+		cableShadow = math::clamp((float) json_number_value(cableShadowJ), 0.f, 1.f);
 
 	json_t* rackBrightnessJ = json_object_get(rootJ, "rackBrightness");
 	if (rackBrightnessJ)

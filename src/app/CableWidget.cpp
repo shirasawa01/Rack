@@ -11,6 +11,7 @@
 #include <engine/Port.hpp>
 #include <app/MultiLightWidget.hpp>
 #include <componentlibrary.hpp>
+#include <app/CableRig.hpp>
 
 
 namespace rack {
@@ -119,7 +120,8 @@ void PlugWidget::setAngle(float angle) {
 }
 
 void PlugWidget::setTop(bool top) {
-	internal->plugLight->setVisible(top);
+	// Cable physics has no voltage lamp on the plug: the port's tooltip shows the voltage
+	internal->plugLight->setVisible(top && !cablephysics::enabled());
 }
 
 CableWidget* PlugWidget::getCable() {
@@ -152,6 +154,8 @@ CableWidget::CableWidget() {
 
 
 CableWidget::~CableWidget() {
+	if (cablephysics::getRig())
+		cablephysics::getRig()->forget(this);
 	delete outputPlug;
 	delete inputPlug;
 
@@ -250,6 +254,10 @@ math::Vec CableWidget::getOutputPos() {
 void CableWidget::mergeJson(json_t* rootJ) {
 	std::string s = color::toHexString(color);
 	json_object_set_new(rootJ, "color", json_string(s.c_str()));
+	// Cable physics: points and shape memory
+	json_t* physicsJ = cablephysics::getRig() ? cablephysics::getRig()->toJson(this) : NULL;
+	if (physicsJ)
+		json_object_set_new(rootJ, "physics", physicsJ);
 }
 
 
@@ -263,6 +271,8 @@ void CableWidget::fromJson(json_t* rootJ) {
 		// In <=v1, cable colors were not serialized.
 		color = APP->scene->rack->getNextCableColor();
 	}
+	if (cablephysics::getRig())
+		cablephysics::getRig()->setJson(this, json_object_get(rootJ, "physics"));
 }
 
 

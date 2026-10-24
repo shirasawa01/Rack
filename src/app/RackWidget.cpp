@@ -6,6 +6,7 @@
 #include <osdialog.h>
 
 #include <app/RackWidget.hpp>
+#include <app/CableRig.hpp>
 #include <widget/TransparentWidget.hpp>
 #include <app/RailWidget.hpp>
 #include <app/Scene.hpp>
@@ -37,6 +38,7 @@ struct RackWidget::Internal {
 	math::Vec selectionEnd;
 	std::set<ModuleWidget*> selectedModules;
 	std::map<widget::Widget*, math::Vec> moduleOldPositions;
+	cablephysics::Rig* rig = NULL;
 };
 
 
@@ -81,6 +83,9 @@ struct PlugContainer : widget::TransparentWidget {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
+		// Cable physics draws the plugs with the cables, in depth order
+		if (cablephysics::enabled())
+			return;
 		if (layer == 2) {
 			// Draw Plugs
 			Widget::draw(args);
@@ -101,6 +106,11 @@ struct CableContainer : widget::TransparentWidget {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer == 3 && cablephysics::enabled()) {
+			if (cablephysics::getRig())
+				cablephysics::getRig()->draw(args);
+			return;
+		}
 		if (layer == 3) {
 			// Draw cable shadows
 			Widget::drawLayer(args, -1);
@@ -108,6 +118,16 @@ struct CableContainer : widget::TransparentWidget {
 			// Draw cables
 			Widget::draw(args);
 		}
+	}
+
+	// Shaping a cable by hand: RackWidget::onButton() hands the drag over here
+	void onDragMove(const DragMoveEvent& e) override {
+		if (cablephysics::getRig())
+			cablephysics::getRig()->dragTo(APP->scene->rack->getMousePos());
+	}
+	void onDragEnd(const DragEndEvent& e) override {
+		if (cablephysics::getRig())
+			cablephysics::getRig()->release();
 	}
 };
 
@@ -126,15 +146,20 @@ RackWidget::RackWidget() {
 
 	internal->cableContainer = new CableContainer;
 	addChild(internal->cableContainer);
+
+	internal->rig = new cablephysics::Rig;
 }
 
 RackWidget::~RackWidget() {
 	clear();
+	delete internal->rig;
 	delete internal;
 }
 
 void RackWidget::step() {
 	Widget::step();
+	// Cable physics, once per frame for all cables together (they collide with each other)
+	internal->rig->step(this);
 }
 
 void RackWidget::draw(const DrawArgs& args) {
@@ -197,6 +222,13 @@ void RackWidget::onHoverKey(const HoverKeyEvent& e) {
 }
 
 void RackWidget::onButton(const ButtonEvent& e) {
+	// Cables lie on top of the modules: a press on a cable's body grabs it to shape it
+	if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
+		if (internal->rig->grab(e.pos)) {
+			e.consume(internal->cableContainer);
+			return;
+		}
+	}
 	OpaqueWidget::onButton(e);
 	if (e.isConsumed())
 		return;

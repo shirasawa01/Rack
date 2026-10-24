@@ -284,6 +284,62 @@ struct CableTensionSlider : ui::Slider {
 };
 
 
+/** Cable physics settings (this fork) */
+struct CablePhysicsQuantity : Quantity {
+	float* ptr;
+	float minValue, maxValue, defaultValue;
+	/** Display = value * scale */
+	float scale;
+	std::string label, unit;
+	int precision;
+
+	CablePhysicsQuantity(float* ptr, float minValue, float maxValue, float defaultValue, float scale, std::string label, std::string unit, int precision = 0) :
+		ptr(ptr), minValue(minValue), maxValue(maxValue), defaultValue(defaultValue), scale(scale), label(label), unit(unit), precision(precision) {}
+	void setValue(float value) override {
+		*ptr = math::clamp(value, getMinValue(), getMaxValue());
+	}
+	float getValue() override {
+		return *ptr;
+	}
+	float getMinValue() override {
+		return minValue;
+	}
+	float getMaxValue() override {
+		return maxValue;
+	}
+	float getDefaultValue() override {
+		return defaultValue;
+	}
+	float getDisplayValue() override {
+		return getValue() * scale;
+	}
+	void setDisplayValue(float displayValue) override {
+		setValue(displayValue / scale);
+	}
+	int getDisplayPrecision() override {
+		return precision;
+	}
+	std::string getDisplayValueString() override {
+		return string::f("%.*f", precision, getDisplayValue());
+	}
+	std::string getLabel() override {
+		return label;
+	}
+	std::string getUnit() override {
+		return unit;
+	}
+};
+struct CablePhysicsSlider : ui::Slider {
+	CablePhysicsSlider(CablePhysicsQuantity* q) {
+		quantity = q;
+		box.size.x = 250.0;
+	}
+	~CablePhysicsSlider() {
+		delete quantity;
+	}
+};
+
+
 struct RackBrightnessQuantity : Quantity {
 	void setValue(float value) override {
 		settings::rackBrightness = math::clamp(value, getMinValue(), getMaxValue());
@@ -477,6 +533,17 @@ struct ViewButton : MenuButton {
 		CableTensionSlider* cableTensionSlider = new CableTensionSlider;
 		cableTensionSlider->box.size.x = 250.0;
 		menu->addChild(cableTensionSlider);
+
+		menu->addChild(createSubmenuItem("Cable physics", "", [=](ui::Menu* menu) {
+			menu->addChild(createBoolPtrMenuItem("Physical cables", "", &settings::cablePhysics));
+			menu->addChild(createIndexPtrSubmenuItem("Style", {"Flat", "Round"}, &settings::cableStyle));
+			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableThickness, 2.5, 6.0, 3.8, 1, "Thickness", " mm", 1)));
+			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableStiffness, 0, 1, 0.9, 100, "Stiffness", "%")));
+			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableWeight, 0, 1, 0.22, 100, "Weight", "%")));
+			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableMemory, 0, 1, 0.75, 100, "Shape memory", "%")));
+			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::caseTilt, 0, 35, 12, 1, "Case tilt", "°")));
+			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableShadow, 0, 1, 0.7, 100, "Shadow", "%")));
+		}));
 
 		RackBrightnessSlider* rackBrightnessSlider = new RackBrightnessSlider;
 		rackBrightnessSlider->box.size.x = 250.0;

@@ -55,6 +55,22 @@ extern std::string uiTheme;
 extern float cableOpacity;
 /** Straightness of cables in the range [0, 1]. Unitless and arbitrary. */
 extern float cableTension;
+/** Cable physics (this fork, reference/CABLE_PHYSICS_SPEC.md). false draws the original cables. */
+extern bool cablePhysics;
+/** 0 = flat, 1 = round (Easel-like cylinder) */
+extern int cableStyle;
+/** In the range [0, 1] */
+extern float cableStiffness;
+/** In the range [0, 1] */
+extern float cableWeight;
+/** Shape memory in the range [0, 1] */
+extern float cableMemory;
+/** Degrees. Tilting the case pushes the cables toward the panel. */
+extern float caseTilt;
+/** Cable diameter in mm, [2.5, 6] */
+extern float cableThickness;
+/** In the range [0, 1] */
+extern float cableShadow;
 extern float rackBrightness;
 extern float spotlightBrightness;
 extern float spotlightRadius;
