@@ -1,0 +1,123 @@
+{
+ "version": "2.6.6",
+ "zoom": 1.0,
+ "gridOffset": [
+  -1.0,
+  -0.1
+ ],
+ "modules": [
+  {
+   "id": 1,
+   "plugin": "Core",
+   "model": "MIDIToCVInterface",
+   "version": "2.6.6",
+   "params": [],
+   "pos": [
+    0,
+    0
+   ]
+  },
+  {
+   "id": 2,
+   "plugin": "Core",
+   "model": "AudioInterface2",
+   "version": "2.6.6",
+   "params": [],
+   "pos": [
+    12,
+    0
+   ]
+  },
+  {
+   "id": 3,
+   "plugin": "Core",
+   "model": "AudioInterface",
+   "version": "2.6.6",
+   "params": [],
+   "pos": [
+    40,
+    0
+   ]
+  },
+  {
+   "id": 4,
+   "plugin": "Core",
+   "model": "CV-MIDI",
+   "version": "2.6.6",
+   "params": [],
+   "pos": [
+    0,
+    1
+   ]
+  },
+  {
+   "id": 5,
+   "plugin": "Core",
+   "model": "AudioInterface",
+   "version": "2.6.6",
+   "params": [],
+   "pos": [
+    20,
+    1
+   ]
+  }
+ ],
+ "cables": [
+  {
+   "id": 100,
+   "outputModuleId": 1,
+   "outputId": 0,
+   "inputModuleId": 2,
+   "inputId": 0,
+   "color": "#f3374b"
+  },
+  {
+   "id": 101,
+   "outputModuleId": 1,
+   "outputId": 1,
+   "inputModuleId": 2,
+   "inputId": 1,
+   "color": "#ffb437"
+  },
+  {
+   "id": 102,
+   "outputModuleId": 1,
+   "outputId": 2,
+   "inputModuleId": 3,
+   "inputId": 0,
+   "color": "#00b56e"
+  },
+  {
+   "id": 103,
+   "outputModuleId": 1,
+   "outputId": 3,
+   "inputModuleId": 5,
+   "inputId": 2,
+   "color": "#3695ef"
+  },
+  {
+   "id": 104,
+   "outputModuleId": 3,
+   "outputId": 0,
+   "inputModuleId": 4,
+   "inputId": 0,
+   "color": "#8b4ade"
+  },
+  {
+   "id": 105,
+   "outputModuleId": 5,
+   "outputId": 1,
+   "inputModuleId": 4,
+   "inputId": 5,
+   "color": "#202020"
+  },
+  {
+   "id": 106,
+   "outputModuleId": 2,
+   "outputId": 0,
+   "inputModuleId": 5,
+   "inputId": 6,
+   "color": "#e0e0e0"
+  }
+ ]
+}

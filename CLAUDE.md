@@ -16,13 +16,20 @@ VCV Rack 2 のパッチケーブルを、実機のパッチケーブルのよう
 
 ## クラウド（Linux）でのビルド
 ```
-apt-get install -y libtool zstd libglu1-mesa-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libasound2-dev libgtk-3-dev libjack-jackd2-dev libpulse-dev xvfb
+apt-get install -y libtool zstd libglu1-mesa-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libasound2-dev libgtk-3-dev libjack-jackd2-dev libpulse-dev xvfb imagemagick
+git fetch --depth 5 origin v2 && git fetch --depth 1 https://github.com/VCVRack/Rack.git tag v2.6.6
 git config submodule.dep/speexdsp.url https://github.com/xiph/speexdsp.git   # gitlab.xiph.org はクラウドから届かない
 git submodule update --init --recursive --depth 1
+git submodule foreach --quiet --recursive 'git reset -q --hard'   # 取得が途中で失敗すると中身が空のまま残るので戻す
 make dep -j8 && make -j8
 ```
-- 依存の取得に github.com・bitbucket.org・curl.se などが要る。ビルド済みの `dep/` は git に入らない（会話ごとにやり直し）。
-- 確かめ：画面なしでパッチを開く（`./Rack -d -h <patch>`）、xvfb の上で起動して画面を撮る（試作の画面と見比べる）。
+- **タグ v2.6.6 が要る**：Rack は版番号を `git describe --tags` で決める。タグが無いと版が空になり、Core モジュールすら読めない。
+  フォークにはタグが無い（クラウドからはタグを push できなかった）ので、clone したら上流から取る（上の 2 行目）。v2.6.6 から 2 コミット先までの履歴も要る。
+- 依存の取得に github.com・bitbucket.org・curl.se などが要る。ビルド済みの `dep/` は git に入らない（会話ごとにやり直し、20 分ほど）。
+- 2026-10-24：改造前の状態で、ビルド・画面なしの起動・xvfb での撮影まで通った。
+- 確かめ：画面なしでパッチを開く（`./Rack -d -h <patch>`）。画面は `sh reference/shot_rack.sh [patch] [out.png]`（xvfb の上で起動して撮る。
+  設定・ログは `$WORK` に置き、リポジトリを汚さない）。試作の画面と見比べる。
+- ケーブル確認用のパッチ：`reference/test_cables.vcv`（Core モジュールだけ。Fundamental なしの開発モードでも開ける。作り直しは `python3 reference/make_test_patch.py`）。
 - Understudy を一緒に読ませるときは、understudy の `vcv/` を `make RACK_DIR=<Rack-SDK>` でビルドし、`dist/Understudy` を `plugins/` にコピー（開発モード `-d` は `plugins/` を見る）。
 
 ## 手元（Windows）
