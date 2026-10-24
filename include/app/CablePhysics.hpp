@@ -24,19 +24,24 @@ static const double LB = 2.6;
 static const double SEG = 1.0;
 static const int SUB = 2;
 static const int ITER = 16;
+/** Bending is checked over neighbours (1) and wider spans, so the whole cable bends as one and settles quickly */
+static const int BEND_SPANS[3] = {1, 2, 4};
+static const double BEND_WEIGHT[3] = {1.0, 0.25, 0.0625};
 
 
 struct Params {
 	/** 0..1 */
 	double stiff = 0.9;
 	/** 0..1 */
-	double weight = 0.22;
+	double weight = 0.5;
 	/** Shape memory, 0..1 */
 	double mem = 0.75;
 	/** Case tilt in degrees. Tilting pushes the cables toward the panel. */
 	double tilt = 12.0;
 	/** Cable diameter in mm */
 	double thickness = 3.8;
+	/** Friction between cables, 0..1. 0.5 is the same as on the panel. */
+	double friction = 0.5;
 	/** Horizontal desk surface at deskY (the prototype's desk in front of the case). */
 	bool desk = false;
 	double deskY = 0.0;
@@ -52,7 +57,12 @@ struct Cable {
 	int n = 0;
 	double seg = 0.0;
 	std::vector<double> x, y, z, px, py, pz, w;
-	std::vector<double> rest1, rest2, rest3;
+	/** Positions at the start of the frame, for telling when the cable has come to rest */
+	std::vector<double> fx, fy, fz;
+	std::vector<double> rest1;
+	/** Bending: rest offset of point i from the middle of points i - s and i + s (0 = straight), for each span s in BEND_SPANS.
+	Shape memory moves it. */
+	std::vector<double> restH[3];
 	/** Hand-bending leaves a set that fades out after release */
 	double plast = 0.0;
 	/** Bumped whenever the points change, for caches that read them */
@@ -63,6 +73,8 @@ struct Cable {
 	double bx() const {return x[n - 1];}
 	double by() const {return y[n - 1];}
 	double span(int i, int j) const;
+	/** How far point i sits off the middle of points i - s and i + s: (s * link)^2 * curvature / 2 for gentle bends */
+	double offset(int i, int s) const;
 	void plastic(double rate);
 	/** Moves the fixed points (jack bases and boot tips) to new jack positions. */
 	void moveEnds(double ax, double ay, double bx, double by);
@@ -127,6 +139,8 @@ private:
 	std::vector<std::vector<int64_t>> shCells;
 	size_t shUsed = 0;
 	std::unordered_set<int64_t> shDone;
+	/** Cable friction runs in the last collision pass of a substep only: in every pass it keeps the contacts trembling */
+	bool frictionPass = false;
 
 	void applyDrag();
 	void collideStatic();

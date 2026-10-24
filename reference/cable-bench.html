@@ -115,13 +115,18 @@ button.act:hover { border-color: var(--muted); }
       </div>
       <div class="slider">
         <label for="weight">ケーブルの重さ</label><output id="weightO"></output>
-        <input type="range" id="weight" min="0" max="100" value="22">
+        <input type="range" id="weight" min="0" max="100" value="50">
         <small>上げるほど長いケーブルが垂れる</small>
       </div>
       <div class="slider">
         <label for="mem">クセの付きやすさ</label><output id="memO"></output>
         <input type="range" id="mem" min="0" max="100" value="75">
         <small>手で曲げた形がどれだけ残るか。新しく挿すケーブルにも効く</small>
+      </div>
+      <div class="slider">
+        <label for="fric">ケーブル同士の摩擦</label><output id="fricO"></output>
+        <input type="range" id="fric" min="0" max="100" value="50">
+        <small>上げるほど重なったケーブルが滑らず、引っかかり合う。50% でパネルと同じ</small>
       </div>
       <div class="slider">
         <label for="tilt">ケースの傾き</label><output id="tiltO"></output>
@@ -219,7 +224,7 @@ function buildLayout() {
 setLayout("vcv");
 
 // ---------- params ----------
-const P = { style: "flat", stiff: 0.9, weight: 0.22, mem: 0.75, tilt: 12, cam: 16, shadow: 0.7, color: "white", len: "auto" };
+const P = { style: "flat", stiff: 0.9, weight: 0.5, mem: 0.75, fric: 0.5, tilt: 12, cam: 16, shadow: 0.7, color: "white", len: "auto" };
 
 // ---------- cables ----------
 let cables = [];
@@ -231,7 +236,8 @@ function makeCable(a, b, len, color) {
   const c = { a, b, len, color, n, seg,
     x: new Float64Array(n), y: new Float64Array(n), z: new Float64Array(n),
     px: new Float64Array(n), py: new Float64Array(n), pz: new Float64Array(n),
-    w: new Float64Array(n), rest1: [], rest2: [], rest3: [] };
+    w: new Float64Array(n), fx: new Float64Array(n), fy: new Float64Array(n), fz: new Float64Array(n),
+    rest1: [], restH: [] };
   // initial shape: the arc a person leaves when plugging in. Short cables get an upward loop,
   // longer ones a downward one; both lie on a circle whose arc length equals the free length.
   const ex = B.x - A.x, ey = B.y - A.y, dist = Math.hypot(ex, ey), half = dist / 2;
@@ -266,19 +272,25 @@ function makeCable(a, b, len, color) {
   }
   const d = i => (i === 0 || i === n - 2) ? LB : seg; // length of link i -> i+1
   for (let i = 0; i < n - 1; i++) c.rest1.push(d(i));
-  for (let i = 0; i < n - 2; i++) c.rest2.push(d(i) + d(i + 1));
-  for (let i = 0; i < n - 3; i++) c.rest3.push(d(i) + d(i + 1) + d(i + 2));
-  // a cable keeps some of the curve it was plugged in with (PVC/silicone memory)
+  // a cable keeps some of the curve it was plugged in with (PVC/silicone memory): from straight toward that curve
   const curl = P.mem * 0.8;
-  for (let i = 0; i < n - 2; i++) c.rest2[i] += (span(c, i, i + 2) - c.rest2[i]) * curl;
-  for (let i = 0; i < n - 3; i++) c.rest3[i] += (span(c, i, i + 3) - c.rest3[i]) * curl;
+  BEND_SPANS.forEach((s, k) => {
+    const r = c.restH[k] = new Float64Array(n);
+    for (let i = s; i < n - s; i++) r[i] = offset(c, i, s) * curl;
+  });
   c.plast = 0;
   return c;
 }
 function span(c, i, j) { return Math.hypot(c.x[j] - c.x[i], c.y[j] - c.y[i], c.z[j] - c.z[i]); }
+// how far point i sits off the middle of points i - s and i + s: (s * link)^2 * curvature / 2 for gentle bends
+function offset(c, i, s) {
+  return Math.hypot(c.x[i] - 0.5 * (c.x[i - s] + c.x[i + s]), c.y[i] - 0.5 * (c.y[i - s] + c.y[i + s]), c.z[i] - 0.5 * (c.z[i - s] + c.z[i + s]));
+}
 function plastic(c, rate) {
-  for (let i = 0; i < c.n - 2; i++) c.rest2[i] += (span(c, i, i + 2) - c.rest2[i]) * rate;
-  for (let i = 0; i < c.n - 3; i++) c.rest3[i] += (span(c, i, i + 3) - c.rest3[i]) * rate;
+  BEND_SPANS.forEach((s, k) => {
+    const r = c.restH[k];
+    for (let i = s; i < c.n - s; i++) r[i] += (offset(c, i, s) - r[i]) * rate;
+  });
 }
 
 function chooseLength(a, b) {
@@ -328,6 +340,9 @@ function rebuildObstacles() {
 
 // ---------- solver ----------
 const SUB = 2, ITER = 16;
+// bending is checked over neighbours and wider spans (weaker by span^2), so the whole cable bends as one and settles quickly
+const BEND_SPANS = [1, 2, 4], BEND_WEIGHT = [1.0, 0.25, 0.0625];
+let frictionPass = false;
 let drag = null; // {ci, i, tx, ty, tz}
 // Cables move only after something touches them, then settle and lock in place.
 let awake = 0, still = 0, dirty = true;
@@ -345,6 +360,22 @@ function solveDist(c, i, j, rest, k) {
   const f = (d - rest) / (d * ws) * k;
   c.x[i] += dx * wi * f; c.y[i] += dy * wi * f; c.z[i] += dz * wi * f;
   c.x[j] -= dx * wj * f; c.y[j] -= dy * wj * f; c.z[j] -= dz * wj * f;
+}
+
+// Bending: keeps point i at its rest offset from the middle of points i - s and i + s. The offset grows linearly
+// with curvature, so even gentle bends push back and the cable holds itself up (chord distances are nearly free near straight).
+function solveBend(c, i, s, rest, k) {
+  const a = i - s, b = i + s, wa = c.w[a], wi = c.w[i], wb = c.w[b];
+  const W = wi + 0.25 * (wa + wb);
+  if (W === 0) return;
+  const dx = c.x[i] - 0.5 * (c.x[a] + c.x[b]), dy = c.y[i] - 0.5 * (c.y[a] + c.y[b]), dz = c.z[i] - 0.5 * (c.z[a] + c.z[b]);
+  const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (d < 1e-9) return;
+  const f = (d - rest) / d * k / W;
+  const cx = dx * f, cy = dy * f, cz = dz * f;
+  c.x[i] -= wi * cx; c.y[i] -= wi * cy; c.z[i] -= wi * cz;
+  c.x[a] += 0.5 * wa * cx; c.y[a] += 0.5 * wa * cy; c.z[a] += 0.5 * wa * cz;
+  c.x[b] += 0.5 * wb * cx; c.y[b] += 0.5 * wb * cy; c.z[b] += 0.5 * wb * cz;
 }
 
 // friction on a contact surface: slow sliding sticks (static friction), faster sliding is slowed
@@ -444,6 +475,21 @@ function segPush(A, i, B, j) {
   A.x[i + 1] += nx * wa1 * lam; A.y[i + 1] += ny * wa1 * lam; A.z[i + 1] += nz * wa1 * lam;
   B.x[j] -= nx * wb0 * lam; B.y[j] -= ny * wb0 * lam; B.z[j] -= nz * wb0 * lam;
   B.x[j + 1] -= nx * wb1 * lam; B.y[j + 1] -= ny * wb1 * lam; B.z[j + 1] -= nz * wb1 * lam;
+  // friction: the sliding of one cable over the other in this step, across the contact normal. Slow sliding sticks,
+  // faster sliding is slowed (the panel's numbers at 50%). Only in the last pass of a substep: every pass keeps contacts trembling.
+  const mu = P.fric;
+  if (mu <= 0 || !frictionPass) return;
+  const vx = (1 - s) * (A.x[i] - A.px[i]) + s * (A.x[i + 1] - A.px[i + 1]) - (1 - t) * (B.x[j] - B.px[j]) - t * (B.x[j + 1] - B.px[j + 1]);
+  const vy = (1 - s) * (A.y[i] - A.py[i]) + s * (A.y[i + 1] - A.py[i + 1]) - (1 - t) * (B.y[j] - B.py[j]) - t * (B.y[j + 1] - B.py[j + 1]);
+  const vz = (1 - s) * (A.z[i] - A.pz[i]) + s * (A.z[i + 1] - A.pz[i + 1]) - (1 - t) * (B.z[j] - B.pz[j]) - t * (B.z[j + 1] - B.pz[j + 1]);
+  const vn = vx * nx + vy * ny + vz * nz;
+  const tx = vx - vn * nx, ty = vy - vn * ny, tz = vz - vn * nz;
+  const stick = STICK * 2 * mu;
+  const g = (tx * tx + ty * ty + tz * tz < stick * stick ? 1 : 0.7 * mu) / den2;
+  A.px[i] += tx * wa0 * g; A.py[i] += ty * wa0 * g; A.pz[i] += tz * wa0 * g;
+  A.px[i + 1] += tx * wa1 * g; A.py[i + 1] += ty * wa1 * g; A.pz[i + 1] += tz * wa1 * g;
+  B.px[j] -= tx * wb0 * g; B.py[j] -= ty * wb0 * g; B.pz[j] -= tz * wb0 * g;
+  B.px[j + 1] -= tx * wb1 * g; B.py[j + 1] -= ty * wb1 * g; B.pz[j + 1] -= tz * wb1 * g;
 }
 
 function step(dt) {
@@ -451,7 +497,7 @@ function step(dt) {
   const g = 981 * 0.9 * P.weight * P.weight + 6;
   const th = P.tilt * Math.PI / 180;
   const gy = g * Math.cos(th) * h * h, gz = -g * Math.sin(th) * h * h;
-  const kb = 0.003 + 0.3 * Math.pow(P.stiff, 2.5);
+  const kb = 0.01 + 0.99 * P.stiff * P.stiff;
   // heavy damping like a real cable's internal friction; it tightens further in the last frames before locking
   const damp = drag ? 0.9 : (awake < 20 ? 0.6 + 0.33 * awake / 20 : 0.93);
   for (let sub = 0; sub < SUB; sub++) {
@@ -468,10 +514,12 @@ function step(dt) {
       for (const c of cables) {
         const n = c.n;
         for (let i = 0; i < n - 1; i++) solveDist(c, i, i + 1, c.rest1[i], 1);
-        for (let i = 0; i < n - 2; i++) solveDist(c, i, i + 2, c.rest2[i], kb);
-        for (let i = 0; i < n - 3; i++) solveDist(c, i, i + 3, c.rest3[i], kb * 0.55);
+        BEND_SPANS.forEach((s, k) => {
+          const r = c.restH[k], kk = kb * BEND_WEIGHT[k];
+          for (let i = s; i < n - s; i++) solveBend(c, i, s, r[i], kk);
+        });
       }
-      if (it % 4 === 3) { collideCables(); collideStatic(); }
+      if (it % 4 === 3) { frictionPass = it === ITER - 1; collideCables(); collideStatic(); }
       if (drag) applyDrag();
     }
   }
@@ -867,8 +915,8 @@ for (const k in COLORS) {
   chips.appendChild(b);
 }
 $("len").onchange = e => { P.len = e.target.value; };
-const fmt = { thick: v => `${(v / 10).toFixed(1)} mm`, mem: v => `${v}%`, stiff: v => `${v}%`, weight: v => `${v}%`, tilt: v => `${v}°`, cam: v => `${v}°`, shadow: v => `${v}%` };
-for (const id of ["thick", "stiff", "weight", "mem", "tilt", "cam", "shadow"]) {
+const fmt = { thick: v => `${(v / 10).toFixed(1)} mm`, mem: v => `${v}%`, stiff: v => `${v}%`, weight: v => `${v}%`, fric: v => `${v}%`, tilt: v => `${v}°`, cam: v => `${v}°`, shadow: v => `${v}%` };
+for (const id of ["thick", "stiff", "weight", "mem", "fric", "tilt", "cam", "shadow"]) {
   const el = $(id), out = $(id + "O");
   const apply = () => {
     const v = +el.value; out.textContent = fmt[id](v);
@@ -879,7 +927,7 @@ for (const id of ["thick", "stiff", "weight", "mem", "tilt", "cam", "shadow"]) {
     }
     if (id === "tilt" || id === "cam") P[id] = v; else P[id] = v / 100;
     if (id === "cam") { setCamera(); drawPanel(); }
-    if (id === "stiff" || id === "weight" || id === "tilt" || id === "mem") wake(); else dirty = true;
+    if (id === "stiff" || id === "weight" || id === "tilt" || id === "mem" || id === "fric") wake(); else dirty = true;
   };
   el.addEventListener("input", apply); apply();
 }
@@ -955,11 +1003,13 @@ function frame(now) {
     if (awake > 0 || drag) {
       // after a release the settling runs several steps per frame, so the cable drops into place and locks
       const k = drag ? 1 : 4;
+      for (const c of cables) { c.fx.set(c.x); c.fy.set(c.y); c.fz.set(c.z); }
       for (let s = 0; s < k; s++) step(1 / 60);
       if (!drag) {
         awake--;
+        // movement over the whole frame: contacts with friction can tremble in place by a few micrometres between substeps
         let v = 0;
-        for (const c of cables) for (let i = 2; i < c.n - 2; i++) v = Math.max(v, Math.abs(c.x[i] - c.px[i]) + Math.abs(c.y[i] - c.py[i]) + Math.abs(c.z[i] - c.pz[i]));
+        for (const c of cables) for (let i = 2; i < c.n - 2; i++) v = Math.max(v, Math.abs(c.x[i] - c.fx[i]) + Math.abs(c.y[i] - c.fy[i]) + Math.abs(c.z[i] - c.fz[i]));
         still = v < 0.004 ? still + 1 : 0;
         if (still > 12) awake = 0;
       }

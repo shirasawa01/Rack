@@ -539,8 +539,9 @@ struct ViewButton : MenuButton {
 			menu->addChild(createIndexPtrSubmenuItem("Style", {"Flat", "Round"}, &settings::cableStyle));
 			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableThickness, 2.5, 6.0, 3.8, 1, "Thickness", " mm", 1)));
 			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableStiffness, 0, 1, 0.9, 100, "Stiffness", "%")));
-			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableWeight, 0, 1, 0.22, 100, "Weight", "%")));
+			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableWeight, 0, 1, 0.5, 100, "Weight", "%")));
 			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableMemory, 0, 1, 0.75, 100, "Shape memory", "%")));
+			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableFriction, 0, 1, 0.5, 100, "Friction between cables", "%")));
 			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::caseTilt, 0, 35, 12, 1, "Case tilt", "°")));
 			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableShadow, 0, 1, 0.7, 100, "Shadow", "%")));
 		}));

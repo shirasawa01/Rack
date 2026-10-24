@@ -1,5 +1,6 @@
 # Compare the C++ physics core (src/app/CablePhysics.cpp) with the prototype (reference/cable-bench.html).
 #   python3 reference/physics_check/check_physics.py
+#   python3 reference/physics_check/check_physics.py --settle [stiffness weight friction]   (how the cables come to rest)
 # Same jacks and knobs as the prototype's VCV screenshot, cables like its sample patch (short loops, long drapes,
 # crossings), then a drag. Both sides print every point; this prints the largest difference per dump.
 # Needs g++, node and Playwright's Chromium (present in the cloud container).
@@ -30,7 +31,8 @@ def pick(lo, hi, length=None):
 for _ in range(5): pick(1.5, 3.6, 15)
 pick(9, 14, 45); pick(12, 19, 60); pick(14, 22, 60); pick(16, 26, 60); pick(5, 9, 30); pick(4, 8, 30); pick(6, 10)
 
-lines = ["params 0.9 0.22 0.75 12 3.8 1 %r" % (SHOT["h"] + 1.1)]
+# stiffness, weight, memory, tilt, thickness, desk, desk y, friction (the prototype's defaults)
+lines = ["params 0.9 0.5 0.75 12 3.8 1 %r 0.5" % (SHOT["h"] + 1.1)]
 lines += ["jack %r %r" % tuple(j) for j in jacks]
 lines += ["part %r %r %r %r" % tuple(k) for k in SHOT["knobs"]]
 lines += ["cable %d %d %r" % c for c in cables]
@@ -39,6 +41,14 @@ lines += ["dump made", "frames 1", "dump f1", "frames 9", "dump f10", "settle", 
 work = tempfile.mkdtemp()
 scen = os.path.join(work, "scenario.txt")
 open(scen, "w").write("\n".join(lines) + "\n")
+
+if "--settle" in sys.argv:
+    # How the cables come to rest with these numbers (C++ only): python3 check_physics.py --settle [stiffness weight friction]
+    exe = os.path.join(work, "settle")
+    subprocess.run(["g++", "-std=c++11", "-O2", "-w", "-I", os.path.join(RACK, "include"), os.path.join(HERE, "settle.cpp"),
+                    os.path.join(RACK, "src", "app", "CablePhysics.cpp"), "-o", exe], check=True)
+    extra = sys.argv[sys.argv.index("--settle") + 1:]
+    sys.exit(subprocess.run([exe, scen] + extra).returncode)
 
 exe = os.path.join(work, "check")
 subprocess.run(["g++", "-std=c++11", "-O2", "-w", "-I", os.path.join(RACK, "include"), os.path.join(HERE, "check.cpp"),

@@ -1,4 +1,5 @@
 // Runs a scenario in the prototype reference/cable-bench.html (headless Chromium) and prints the same dump as check.cpp.
+// frameSim is a copy of the prototype's frame(): keep them the same.
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
 (async () => {
@@ -15,11 +16,12 @@ const fs = require('fs'), path = require('path');
 		const frameSim = () => {
 			if (awake > 0 || drag) {
 				const k = drag ? 1 : 4;
+				for (const c of cables) { c.fx.set(c.x); c.fy.set(c.y); c.fz.set(c.z); }
 				for (let s = 0; s < k; s++) step(1 / 60);
 				if (!drag) {
 					awake--;
 					let v = 0;
-					for (const c of cables) for (let i = 2; i < c.n - 2; i++) v = Math.max(v, Math.abs(c.x[i] - c.px[i]) + Math.abs(c.y[i] - c.py[i]) + Math.abs(c.z[i] - c.pz[i]));
+					for (const c of cables) for (let i = 2; i < c.n - 2; i++) v = Math.max(v, Math.abs(c.x[i] - c.fx[i]) + Math.abs(c.y[i] - c.fy[i]) + Math.abs(c.z[i] - c.fz[i]));
 					still = v < 0.004 ? still + 1 : 0;
 					if (still > 12) awake = 0;
 				}
@@ -30,7 +32,7 @@ const fs = require('fs'), path = require('path');
 			const n = t.slice(1).map(Number);
 			if (t[0] === 'params') {
 				P.stiff = n[0]; P.weight = n[1]; P.mem = n[2]; P.tilt = n[3]; RC = n[4] / 20; RB = 0.13 + RC * 1.25;
-				DESK = n[5] ? n[6] : 1e9;
+				DESK = n[5] ? n[6] : 1e9; P.fric = n[7];
 			}
 			else if (t[0] === 'jack') jacks.push({ x: n[0], y: n[1], cable: -1 });
 			else if (t[0] === 'part') knobs.push({ x: n[0], y: n[1], R: n[2] / 1.12, H: n[3], ang: 0 });

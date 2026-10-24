@@ -46,11 +46,17 @@ double Cable::span(int i, int j) const {
 }
 
 
+double Cable::offset(int i, int s) const {
+	return hypot3(x[i] - 0.5 * (x[i - s] + x[i + s]), y[i] - 0.5 * (y[i - s] + y[i + s]), z[i] - 0.5 * (z[i - s] + z[i + s]));
+}
+
+
 void Cable::plastic(double rate) {
-	for (int i = 0; i < n - 2; i++)
-		rest2[i] += (span(i, i + 2) - rest2[i]) * rate;
-	for (int i = 0; i < n - 3; i++)
-		rest3[i] += (span(i, i + 3) - rest3[i]) * rate;
+	for (int k = 0; k < 3; k++) {
+		const int s = BEND_SPANS[k];
+		for (int i = s; i < n - s; i++)
+			restH[k][i] += (offset(i, s) - restH[k][i]) * rate;
+	}
 }
 
 
@@ -78,7 +84,7 @@ void makeCable(Cable& c, double ax, double ay, double bx, double by, double len,
 	c.x.assign(n, 0); c.y.assign(n, 0); c.z.assign(n, 0);
 	c.px.assign(n, 0); c.py.assign(n, 0); c.pz.assign(n, 0);
 	c.w.assign(n, 0);
-	c.rest1.clear(); c.rest2.clear(); c.rest3.clear();
+	c.rest1.clear();
 
 	// Initial shape: the arc a person leaves when plugging in. Short cables get an upward loop,
 	// longer ones a downward one; both lie on a circle whose arc length equals the free length.
@@ -154,16 +160,14 @@ void makeCable(Cable& c, double ax, double ay, double bx, double by, double len,
 	auto d = [&](int i) {return (i == 0 || i == n - 2) ? LB : seg;};
 	for (int i = 0; i < n - 1; i++)
 		c.rest1.push_back(d(i));
-	for (int i = 0; i < n - 2; i++)
-		c.rest2.push_back(d(i) + d(i + 1));
-	for (int i = 0; i < n - 3; i++)
-		c.rest3.push_back(d(i) + d(i + 1) + d(i + 2));
-	// A cable keeps some of the curve it was plugged in with (PVC/silicone memory)
+	// A cable keeps some of the curve it was plugged in with (PVC/silicone memory): from straight toward that curve
 	const double curl = mem * 0.8;
-	for (int i = 0; i < n - 2; i++)
-		c.rest2[i] += (c.span(i, i + 2) - c.rest2[i]) * curl;
-	for (int i = 0; i < n - 3; i++)
-		c.rest3[i] += (c.span(i, i + 3) - c.rest3[i]) * curl;
+	for (int k = 0; k < 3; k++) {
+		const int s = BEND_SPANS[k];
+		c.restH[k].assign(n, 0);
+		for (int i = s; i < n - s; i++)
+			c.restH[k][i] = c.offset(i, s) * curl;
+	}
 	c.plast = 0;
 	c.version++;
 }
@@ -224,6 +228,29 @@ static void solveDist(Cable& c, int i, int j, double rest, double k) {
 	const double f = (d - rest) / (d * ws) * k;
 	c.x[i] += dx * wi * f; c.y[i] += dy * wi * f; c.z[i] += dz * wi * f;
 	c.x[j] -= dx * wj * f; c.y[j] -= dy * wj * f; c.z[j] -= dz * wj * f;
+}
+
+
+/** Bending: keeps point i at its rest offset from the middle of its neighbours. The offset grows linearly with curvature,
+so even gentle bends push back and the cable holds itself up (chord-distance bending is nearly free near straight).
+With i = 1 and n - 2 the fixed jack base and boot tip keep the cable leaving the boot straight. */
+static void solveBend(Cable& c, int i, int s, double rest, double k) {
+	const int a = i - s, b = i + s;
+	const double wa = c.w[a], wi = c.w[i], wb = c.w[b];
+	const double W = wi + 0.25 * (wa + wb);
+	if (W == 0)
+		return;
+	const double dx = c.x[i] - 0.5 * (c.x[a] + c.x[b]);
+	const double dy = c.y[i] - 0.5 * (c.y[a] + c.y[b]);
+	const double dz = c.z[i] - 0.5 * (c.z[a] + c.z[b]);
+	const double d = std::sqrt(dx * dx + dy * dy + dz * dz);
+	if (d < 1e-9)
+		return;
+	const double f = (d - rest) / d * k / W;
+	const double cx = dx * f, cy = dy * f, cz = dz * f;
+	c.x[i] -= wi * cx; c.y[i] -= wi * cy; c.z[i] -= wi * cz;
+	c.x[a] += 0.5 * wa * cx; c.y[a] += 0.5 * wa * cy; c.z[a] += 0.5 * wa * cz;
+	c.x[b] += 0.5 * wb * cx; c.y[b] += 0.5 * wb * cy; c.z[b] += 0.5 * wb * cz;
 }
 
 
@@ -395,6 +422,24 @@ void World::segPush(Cable& A, int i, Cable& B, int j) {
 	A.x[i + 1] += nx * wa1 * lam; A.y[i + 1] += ny * wa1 * lam; A.z[i + 1] += nz * wa1 * lam;
 	B.x[j] -= nx * wb0 * lam; B.y[j] -= ny * wb0 * lam; B.z[j] -= nz * wb0 * lam;
 	B.x[j + 1] -= nx * wb1 * lam; B.y[j + 1] -= ny * wb1 * lam; B.z[j + 1] -= nz * wb1 * lam;
+	// Friction: the sliding of one cable over the other in this step, across the contact normal.
+	// Slow sliding sticks, faster sliding is slowed (the same numbers as the panel at friction 0.5).
+	const double mu = P.friction;
+	if (mu <= 0 || !frictionPass)
+		return;
+	const double vx = (1 - s) * (A.x[i] - A.px[i]) + s * (A.x[i + 1] - A.px[i + 1]) - (1 - t) * (B.x[j] - B.px[j]) - t * (B.x[j + 1] - B.px[j + 1]);
+	const double vy = (1 - s) * (A.y[i] - A.py[i]) + s * (A.y[i + 1] - A.py[i + 1]) - (1 - t) * (B.y[j] - B.py[j]) - t * (B.y[j + 1] - B.py[j + 1]);
+	const double vz = (1 - s) * (A.z[i] - A.pz[i]) + s * (A.z[i + 1] - A.pz[i + 1]) - (1 - t) * (B.z[j] - B.pz[j]) - t * (B.z[j + 1] - B.pz[j + 1]);
+	const double vn = vx * nx + vy * ny + vz * nz;
+	const double tx = vx - vn * nx, ty = vy - vn * ny, tz = vz - vn * nz;
+	const double vt2 = tx * tx + ty * ty + tz * tz;
+	const double stick = STICK * 2 * mu;
+	const double keep = (vt2 < stick * stick) ? 1 : 0.7 * mu;
+	const double g = keep / den2;
+	A.px[i] += tx * wa0 * g; A.py[i] += ty * wa0 * g; A.pz[i] += tz * wa0 * g;
+	A.px[i + 1] += tx * wa1 * g; A.py[i + 1] += ty * wa1 * g; A.pz[i + 1] += tz * wa1 * g;
+	B.px[j] -= tx * wb0 * g; B.py[j] -= ty * wb0 * g; B.pz[j] -= tz * wb0 * g;
+	B.px[j + 1] -= tx * wb1 * g; B.py[j + 1] -= ty * wb1 * g; B.pz[j + 1] -= tz * wb1 * g;
 }
 
 
@@ -405,7 +450,7 @@ void World::step(double dt) {
 	const double g = 981 * 0.9 * P.weight * P.weight + 6;
 	const double th = P.tilt * M_PI / 180;
 	const double gy = g * std::cos(th) * h * h, gz = -g * std::sin(th) * h * h;
-	const double kb = 0.003 + 0.3 * std::pow(P.stiff, 2.5);
+	const double kb = 0.01 + 0.99 * P.stiff * P.stiff;
 	// Heavy damping like a real cable's internal friction; it tightens further in the last frames before locking
 	const double damp = dragging ? 0.9 : (awake < 20 ? 0.6 + 0.33 * awake / 20 : 0.93);
 	for (int sub = 0; sub < SUB; sub++) {
@@ -427,12 +472,14 @@ void World::step(double dt) {
 				const int n = c.n;
 				for (int i = 0; i < n - 1; i++)
 					solveDist(c, i, i + 1, c.rest1[i], 1);
-				for (int i = 0; i < n - 2; i++)
-					solveDist(c, i, i + 2, c.rest2[i], kb);
-				for (int i = 0; i < n - 3; i++)
-					solveDist(c, i, i + 3, c.rest3[i], kb * 0.55);
+				for (int k = 0; k < 3; k++) {
+					const int s = BEND_SPANS[k];
+					for (int i = s; i < n - s; i++)
+						solveBend(c, i, s, c.restH[k][i], kb * BEND_WEIGHT[k]);
+				}
 			}
 			if (it % 4 == 3) {
+				frictionPass = (it == ITER - 1);
 				collideCables();
 				collideStatic();
 			}
@@ -457,14 +504,20 @@ bool World::frame() {
 		return false;
 	// After a release the settling runs several steps per frame, so the cable drops into place and locks
 	const int k = dragging ? 1 : 4;
+	for (Cable* c : cables) {
+		c->fx = c->x;
+		c->fy = c->y;
+		c->fz = c->z;
+	}
 	for (int s = 0; s < k; s++)
 		step(1.0 / 60);
 	if (!dragging) {
 		awake--;
+		// Movement over the whole frame: contacts with friction can tremble in place by a few micrometres from substep to substep
 		double v = 0;
 		for (const Cable* c : cables)
 			for (int i = 2; i < c->n - 2; i++)
-				v = std::max(v, std::fabs(c->x[i] - c->px[i]) + std::fabs(c->y[i] - c->py[i]) + std::fabs(c->z[i] - c->pz[i]));
+				v = std::max(v, std::fabs(c->x[i] - c->fx[i]) + std::fabs(c->y[i] - c->fy[i]) + std::fabs(c->z[i] - c->fz[i]));
 		still = v < 0.004 ? still + 1 : 0;
 		if (still > 12)
 			awake = 0;

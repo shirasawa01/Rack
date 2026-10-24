@@ -36,11 +36,12 @@ float cableTension = 1.0;
 bool cablePhysics = true;
 int cableStyle = 0;
 float cableStiffness = 0.9;
-float cableWeight = 0.22;
+float cableWeight = 0.5;
 float cableMemory = 0.75;
 float caseTilt = 12.0;
 float cableThickness = 3.8;
 float cableShadow = 0.7;
+float cableFriction = 0.5;
 float rackBrightness = 1.0;
 float spotlightBrightness = 0.2;
 float spotlightRadius = 300.0;
@@ -175,6 +176,7 @@ json_t* toJson() {
 	json_object_set_new(rootJ, "caseTilt", json_real(caseTilt));
 	json_object_set_new(rootJ, "cableThickness", json_real(cableThickness));
 	json_object_set_new(rootJ, "cableShadow", json_real(cableShadow));
+	json_object_set_new(rootJ, "cableFriction", json_real(cableFriction));
 
 	json_object_set_new(rootJ, "rackBrightness", json_real(rackBrightness));
 
@@ -404,6 +406,10 @@ void fromJson(json_t* rootJ) {
 	json_t* cableShadowJ = json_object_get(rootJ, "cableShadow");
 	if (cableShadowJ)
 		cableShadow = math::clamp((float) json_number_value(cableShadowJ), 0.f, 1.f);
+
+	json_t* cableFrictionJ = json_object_get(rootJ, "cableFriction");
+	if (cableFrictionJ)
+		cableFriction = math::clamp((float) json_number_value(cableFrictionJ), 0.f, 1.f);
 
 	json_t* rackBrightnessJ = json_object_get(rootJ, "rackBrightness");
 	if (rackBrightnessJ)

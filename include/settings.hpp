@@ -71,6 +71,8 @@ extern float caseTilt;
 extern float cableThickness;
 /** In the range [0, 1] */
 extern float cableShadow;
+/** Friction between cables in the range [0, 1]. 0.5 is the same as on the panel. */
+extern float cableFriction;
 extern float rackBrightness;
 extern float spotlightBrightness;
 extern float spotlightRadius;

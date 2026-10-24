@@ -206,13 +206,17 @@ static bool loadJson(Cable& c, json_t* j, double ax, double ay, double bx, doubl
 	const int n = c.n;
 	json_t* unitJ = json_object_get(j, "unit");
 	double unit = unitJ ? json_number_value(unitJ) : JSON_UNIT;
-	std::vector<double> p, rest2, rest3;
+	std::vector<double> p, rest[3];
 	if (!readArray(json_object_get(j, "points"), p, 3 * n, unit))
 		return false;
-	if (!readArray(json_object_get(j, "rest2"), rest2, n - 2, unit))
+	// Bending memory per span (BEND_SPANS). Patches saved with the first, chord-distance bending have none: laid out afresh.
+	json_t* bendJ = json_object_get(j, "bend");
+	if (!json_is_array(bendJ) || json_array_size(bendJ) != 3)
 		return false;
-	if (!readArray(json_object_get(j, "rest3"), rest3, n - 3, unit))
-		return false;
+	for (int k = 0; k < 3; k++) {
+		if (!readArray(json_array_get(bendJ, k), rest[k], n, unit))
+			return false;
+	}
 	double dax = ax - p[0], day = ay - p[1];
 	double dbx = bx - p[3 * (n - 1)], dby = by - p[3 * (n - 1) + 1];
 	if (std::hypot(dax - dbx, day - dby) > 0.01)
@@ -225,8 +229,8 @@ static bool loadJson(Cable& c, json_t* j, double ax, double ay, double bx, doubl
 		c.y[i] = c.py[i] = p[3 * i + 1] + day;
 		c.z[i] = c.pz[i] = p[3 * i + 2];
 	}
-	c.rest2 = rest2;
-	c.rest3 = rest3;
+	for (int k = 0; k < 3; k++)
+		c.restH[k] = rest[k];
 	c.version++;
 	return true;
 }
@@ -253,8 +257,10 @@ json_t* Rig::toJson(CableWidget* cw) {
 		p.push_back(c.z[i]);
 	}
 	json_object_set_new(rootJ, "points", intArray(p));
-	json_object_set_new(rootJ, "rest2", intArray(c.rest2));
-	json_object_set_new(rootJ, "rest3", intArray(c.rest3));
+	json_t* bendJ = json_array();
+	for (int k = 0; k < 3; k++)
+		json_array_append_new(bendJ, intArray(c.restH[k]));
+	json_object_set_new(rootJ, "bend", bendJ);
 	return rootJ;
 }
 
@@ -307,9 +313,10 @@ void Rig::step(RackWidget* rack) {
 	p.mem = settings::cableMemory;
 	p.tilt = settings::caseTilt;
 	p.thickness = settings::cableThickness;
+	p.friction = settings::cableFriction;
 	// No desk in Rack (plan Q1): long cables hang down the rack
 	p.desk = false;
-	bool paramsChanged = p.stiff != W.P.stiff || p.weight != W.P.weight || p.mem != W.P.mem || p.tilt != W.P.tilt || p.thickness != W.P.thickness;
+	bool paramsChanged = p.stiff != W.P.stiff || p.weight != W.P.weight || p.mem != W.P.mem || p.tilt != W.P.tilt || p.thickness != W.P.thickness || p.friction != W.P.friction;
 	W.P = p;
 
 	size_t h = partsHash(rack);

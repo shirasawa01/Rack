@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
 		std::string c = cmd;
 		if (c == "params") {
 			int desk;
-			fscanf(f, "%lf %lf %lf %lf %lf %d %lf", &W.P.stiff, &W.P.weight, &W.P.mem, &W.P.tilt, &W.P.thickness, &desk, &W.P.deskY);
+			fscanf(f, "%lf %lf %lf %lf %lf %d %lf %lf", &W.P.stiff, &W.P.weight, &W.P.mem, &W.P.tilt, &W.P.thickness, &desk, &W.P.deskY, &W.P.friction);
 			W.P.desk = desk;
 		}
 		else if (c == "jack") {

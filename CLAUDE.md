@@ -29,7 +29,9 @@ make dep -j8 && make -j8
 - 2026-10-24：改造前の状態で、ビルド・画面なしの起動・xvfb での撮影まで通った。
 - 2026-10-24：段階 B〜F を入れた。物理は `src/app/CablePhysics.cpp`（Rack に依存しない）、Rack につなぐ部分と描画は `src/app/CableRig.cpp`。
   要点と置き場所は `reference/bench_notes.md`（試作を読み直す前にこちら）。
-- **物理を変えたら** `python3 reference/physics_check/check_physics.py`（試作と全点を比べる。差 0 のはず）。
+- **物理を変えたら** `python3 reference/physics_check/check_physics.py`（試作と全点を比べる。差 0 のはず）。落ち着き方は `--settle`。
+- 2026-10-24：曲げ・ケーブル同士の摩擦・止まったかの判定を **仕様から変えた**（実機の写真ほど張りが無かったため）。試作 HTML も同じに直した。
+  何をどう変えたかは `reference/bench_notes.md` の「仕様から変えたこと」。仕様の原本（`CABLE_PHYSICS_SPEC.md`）はそのまま。
 - 確かめ：画面なしでパッチを開く（`./Rack -d -h <patch>`）。画面は `sh reference/shot_rack.sh [patch] [out.png]`（xvfb の上で起動して撮る。
   設定・ログは `$WORK` に置き、リポジトリを汚さない）。試作の画面と見比べる。
 - ケーブル確認用のパッチ：`reference/test_cables.vcv`（Core モジュールだけ。Fundamental なしの開発モードでも開ける。作り直しは `python3 reference/make_test_patch.py`）。
