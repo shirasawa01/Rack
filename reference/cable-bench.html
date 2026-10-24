@@ -1,0 +1,973 @@
+<title>ケーブル物理ベンチ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: one column bench. The rack canvas is the hero; the control strip below reads like a spec sheet. Single dark look on purpose (it is a rack under studio light). */
+:root {
+  --bg: #0d0e10;
+  --surface: #16171a;
+  --line: #2a2b30;
+  --fg: #ebe9e3;
+  --muted: #8e9096;
+  --accent: #ebe9e3;
+  --warn: #ffb35c;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { background: var(--bg); color: var(--fg); }
+body {
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 32px;
+}
+.wrap { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: 0.02em; text-wrap: balance; }
+.count { font-family: var(--font-data); font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
+.stage { position: relative; border-radius: 10px; overflow: hidden; background: #0a0a0b; touch-action: none; }
+canvas { display: block; width: 100%; touch-action: none; cursor: crosshair; }
+.hint { font-size: 13px; color: var(--muted); margin: 0; }
+.hint b { color: var(--fg); font-weight: 500; }
+.panel { display: grid; gap: 16px; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.row { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+.label { font-size: 12px; color: var(--muted); letter-spacing: 0.08em; min-width: 4.5em; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { width: 34px; height: 34px; border-radius: 50%; border: 2px solid transparent; padding: 0; cursor: pointer; box-shadow: inset 0 -4px 6px rgba(0,0,0,.35); }
+.chip[aria-pressed="true"] { border-color: var(--fg); outline: 2px solid var(--bg); outline-offset: -4px; }
+.chip:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+select { font-family: var(--font-data); font-size: 14px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 24px; }
+.slider { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; }
+.slider label { font-size: 13px; }
+.slider output { font-family: var(--font-data); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.slider small { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { font-family: var(--font-body); font-size: 14px; background: transparent; color: var(--muted); border: 0; padding: 7px 14px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+button.act { font-family: var(--font-body); font-size: 14px; background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; cursor: pointer; }
+button.act:hover { border-color: var(--muted); }
+.toast { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: rgba(13,14,16,.88); color: var(--fg); font-size: 13px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); pointer-events: none; opacity: 0; transition: opacity .25s; max-width: calc(100% - 24px); text-align: center; }
+.toast.on { opacity: 1; }
+.notes { font-size: 12.5px; color: var(--muted); margin: 0; line-height: 1.6; }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>ケーブル物理ベンチ</h1>
+    <span class="count" id="count">ケーブル 0本</span>
+  </header>
+
+  <div class="stage" id="stage">
+    <canvas id="cv" aria-label="ユーロラックのパネルとパッチケーブル。空いたジャックを2つタップでつなぎ、プラグのタップで抜き、ケーブルのドラッグで形を整える"></canvas>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </div>
+
+  <p class="hint"><b>つなぐ</b> 空いたジャックを2つタップ　<b>抜く</b> プラグをタップ　<b>整える</b> ケーブルをドラッグ</p>
+
+  <section class="panel" aria-label="設定">
+    <div class="row">
+      <span class="label">パネル</span>
+      <div class="seg" role="group" aria-label="パネル">
+        <button type="button" id="mVcv" aria-pressed="true">あなたのVCV</button>
+        <button type="button" id="mFake" aria-pressed="false">架空のラック</button>
+      </div>
+      <span class="label">描き方</span>
+      <div class="seg" role="group" aria-label="描き方">
+        <button type="button" id="sFlat" aria-pressed="true">フラット</button>
+        <button type="button" id="sRound" aria-pressed="false">立体</button>
+      </div>
+    </div>
+    <div class="row">
+      <span class="label">色</span>
+      <div class="chips" id="chips"></div>
+      <span class="label" style="margin-left:auto">長さ</span>
+      <select id="len">
+        <option value="auto">自動(届く最短)</option>
+        <option value="15">15 cm</option>
+        <option value="30">30 cm</option>
+        <option value="45">45 cm</option>
+        <option value="60">60 cm</option>
+        <option value="90">90 cm</option>
+        <option value="150">150 cm</option>
+      </select>
+    </div>
+
+    <div class="sliders">
+      <div class="slider">
+        <label for="thick">ケーブルの太さ</label><output id="thickO"></output>
+        <input type="range" id="thick" min="25" max="60" value="38">
+        <small>直径。細身のケーブルは2.5〜3mm、一般的なものは3.5〜4mm前後。プラグの太さも合わせて変わる</small>
+      </div>
+      <div class="slider">
+        <label for="stiff">曲げの硬さ</label><output id="stiffO"></output>
+        <input type="range" id="stiff" min="0" max="100" value="90">
+        <small>上げるほど短いケーブルが輪になって跳ね上がる</small>
+      </div>
+      <div class="slider">
+        <label for="weight">ケーブルの重さ</label><output id="weightO"></output>
+        <input type="range" id="weight" min="0" max="100" value="22">
+        <small>上げるほど長いケーブルが垂れる</small>
+      </div>
+      <div class="slider">
+        <label for="mem">クセの付きやすさ</label><output id="memO"></output>
+        <input type="range" id="mem" min="0" max="100" value="75">
+        <small>手で曲げた形がどれだけ残るか。新しく挿すケーブルにも効く</small>
+      </div>
+      <div class="slider">
+        <label for="tilt">ケースの傾き</label><output id="tiltO"></output>
+        <input type="range" id="tilt" min="0" max="35" value="12">
+        <small>後ろに倒すほどケーブルがパネルやノブにもたれる</small>
+      </div>
+      <div class="slider">
+        <label for="cam">カメラの高さ</label><output id="camO"></output>
+        <input type="range" id="cam" min="0" max="40" value="16">
+        <small>0°がRackと同じ真正面。上げると手前への伸びが見える</small>
+      </div>
+      <div class="slider">
+        <label for="shadow">影の濃さ</label><output id="shadowO"></output>
+        <input type="range" id="shadow" min="0" max="100" value="70">
+        <small>真正面でも奥行きを伝える一番の手がかり</small>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button class="act" id="bSample" type="button">サンプルに戻す</button>
+      <button class="act" id="bRandom" type="button">ランダムに5本挿す</button>
+      <button class="act" id="bClear" type="button">全部抜く</button>
+    </div>
+  </section>
+
+  <p class="notes">単位はcm。プラグとブーツは手前に2.6cm突き出た剛体、ケーブルは直径3.8mm(変更可)の弾性棒として、約1cm刻みの点で計算しています。触ったときだけ動き、落ち着いたら固定されます。「あなたのVCV」は送ってもらったスクリーンショットを2段の3U(25.7cm)として実寸に合わせ、画像から見つけた96個のジャックに挿せるようにしています。ノブの位置も拾っていて、ケーブルが上に乗ります。</p>
+</div>
+
+<script>
+"use strict";
+// ---------- world (cm, y down, z toward the viewer) ----------
+const HP = 0.508, ROW = 12.85;
+const ROWS = [[12, 14, 15], [16, 8, 17]];
+let W = 41 * HP, H = ROW * 2, DESK = H + 1.1;
+const LB = 2.6, SEG = 1.0;
+let RC = 0.19, RB = 0.37;
+const STD_LEN = [15, 30, 45, 60, 90, 120, 150];
+const LIGHT = norm3(-0.35, -0.8, 1.0);
+const COLORS = {
+  white:  { body: "#ecebe5", label: "白" },
+  pink:   { body: "#ff5fa6", label: "ピンク" },
+  black:  { body: "#2a2a2c", label: "黒" },
+  purple: { body: "#8b56cc", label: "紫" },
+  blue:   { body: "#2f72c4", label: "青" },
+};
+
+function norm3(x, y, z) { const l = Math.hypot(x, y, z); return [x / l, y / l, z / l]; }
+let seed = 11;
+function rnd() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
+
+// your VCV screenshot: jack and knob positions found in the image, in cm (two 3U rows = 25.7 cm)
+const SHOT = {"src":"shot.jpg","pw":1788,"ph":1512,"w":30.391,"h":25.7,"jacks":[[26.04,1.27],[27.84,1.27],[29.69,1.27],[1.96,1.46],[0.81,1.47],[3.61,1.48],[6.63,1.47],[8.31,1.48],[9.47,1.48],[12.61,1.59],[14.13,1.59],[18.77,1.59],[20.27,1.59],[21.8,1.59],[27.06,2.62],[28.6,2.62],[12.61,3.05],[14.13,3.05],[18.77,3.05],[20.27,3.05],[21.8,3.05],[24.14,3.05],[12.61,4.56],[14.13,4.56],[18.77,4.56],[21.8,4.56],[9.5,4.98],[0.79,5.01],[27.08,5.51],[28.63,5.51],[9.26,6.12],[1.06,6.15],[24.14,6.14],[9.51,7.33],[0.8,7.35],[26.12,8.12],[27.21,8.12],[28.55,8.12],[29.61,8.12],[9.27,8.52],[1.04,8.55],[26.0,9.47],[29.77,9.47],[4.58,10.09],[5.74,10.09],[6.95,10.09],[3.38,10.1],[8.32,11.3],[3.98,11.32],[5.17,11.32],[9.52,11.31],[0.8,11.33],[2.03,11.33],[6.31,11.33],[11.09,11.42],[12.61,11.41],[14.13,11.42],[16.45,11.41],[18.77,11.41],[20.27,11.42],[21.8,11.42],[24.14,11.41],[23.4,14.34],[24.84,14.34],[26.29,14.34],[0.96,14.45],[2.24,14.45],[5.56,14.45],[8.3,14.45],[10.26,14.45],[12.22,14.45],[14.18,14.45],[16.14,14.45],[18.1,14.45],[20.05,14.45],[3.17,15.58],[4.44,15.58],[7.33,15.58],[9.28,15.58],[11.24,15.58],[13.2,15.58],[15.16,15.58],[17.12,15.58],[19.08,15.58],[21.03,15.58],[22.93,16.19],[26.65,16.2],[22.93,17.38],[26.65,17.65],[5.71,18.77],[26.65,19.11],[26.65,20.5],[5.71,20.54],[22.96,20.78],[26.65,21.79],[22.96,22.0]],"knobs":[[5.14,2.13,0.42,1.8],[5.14,4.14,0.42,1.8],[5.14,6.13,0.42,1.8],[7.21,7.91,0.47,1.8],[3.06,7.92,0.47,1.8],[24.84,16.29,0.44,1.8],[7.3,17.19,0.39,1.8],[9.26,17.18,0.39,1.8],[11.22,17.19,0.39,1.8],[13.18,17.19,0.38,1.8],[15.14,17.19,0.39,1.8],[17.1,17.19,0.39,1.8],[19.05,17.19,0.39,1.8],[21.01,17.18,0.38,1.8],[1.37,18.37,0.47,1.8],[24.82,18.48,0.51,1.8],[3.68,18.36,0.39,1.8],[7.31,19.05,0.39,1.8],[9.26,19.05,0.39,1.8],[11.22,19.05,0.38,1.8],[13.18,19.05,0.38,1.8],[15.13,19.05,0.38,1.8],[17.09,19.05,0.39,1.8],[19.06,19.05,0.39,1.8],[21.01,19.05,0.38,1.8],[3.63,20.41,0.39,1.8],[24.84,20.8,0.43,1.8],[7.3,20.91,0.39,1.8],[9.26,20.91,0.39,1.8],[13.18,20.91,0.38,1.8],[15.13,20.91,0.39,1.8],[17.1,20.91,0.39,1.8],[19.05,20.91,0.39,1.8],[11.22,20.91,0.38,1.8],[21.01,20.91,0.38,1.8],[24.83,23.16,0.52,1.8],[3.09,3.14,0.54,1.9],[7.22,3.14,0.54,1.9],[3.09,5.44,0.54,1.9],[7.22,5.44,0.54,1.9],[5.1,8.16,0.44,1.7],[1.05,3.14,0.54,1.0],[9.18,3.14,0.54,1.0],[12.61,7.14,1.36,2.2],[20.31,7.14,1.36,2.2],[16.45,7.73,0.54,1.8],[11.1,3.06,0.48,1.0],[24.1,1.61,0.54,1.8],[24.1,4.56,0.54,1.8],[24.1,7.73,0.54,1.8],[11.17,9.77,0.51,1.8],[13.94,10.03,0.51,1.8],[16.45,9.86,0.51,1.8],[18.87,9.77,0.51,1.8],[21.62,10.03,0.51,1.8],[24.1,9.77,0.51,1.8],[26.26,3.94,0.54,1.8],[29.49,3.94,0.54,1.8],[26.26,11.35,0.54,1.8],[29.49,11.35,0.54,1.8],[23.03,23.88,0.68,1.0]]};
+const shotImg = new Image();
+let shotReady = false;
+shotImg.onload = () => { shotReady = true; if (MODE === "vcv") { drawPanel(); dirty = true; } };
+shotImg.src = SHOT.src;
+
+// layout: modules, jacks, knobs
+let MODE = "vcv";
+const modules = [], jacks = [], knobs = [];
+function setLayout(mode) {
+  MODE = mode; modules.length = 0; jacks.length = 0; knobs.length = 0; seed = 11;
+  if (mode === "vcv") {
+    W = SHOT.w; H = SHOT.h;
+    SHOT.jacks.forEach(([x, y]) => jacks.push({ x, y, cable: -1 }));
+    SHOT.knobs.forEach(([x, y, R, h]) => knobs.push({ x, y, R: R / 1.12, H: h, ang: 0 }));
+  } else {
+    W = 41 * HP; H = ROW * 2;
+    buildLayout();
+  }
+  DESK = H + 1.1;
+}
+function buildLayout() {
+  ROWS.forEach((row, r) => {
+    let x = 0;
+    row.forEach(hp => {
+      const w = hp * HP, top = r * ROW;
+      modules.push({ x, y: top, w, h: ROW });
+      const cols = Math.max(1, Math.floor((w - 0.4) / 1.75));
+      for (let c = 0; c < cols; c++) {
+        for (let k = 0; k < 6; k++) {
+          const cx = x + (w / cols) * (c + 0.5), cy = top + 1.55 + k * 1.95;
+          const v = rnd(), lower = k >= 3;
+          if (v < (lower ? 0.62 : 0.34)) jacks.push({ x: cx, y: cy, cable: -1 });
+          else if (v < (lower ? 0.84 : 0.8)) {
+            const big = rnd() < 0.18;
+            knobs.push({ x: cx, y: cy, R: big ? 0.78 : 0.52, H: big ? 1.9 : 1.6, ang: -2.4 + rnd() * 4.8 });
+          }
+        }
+      }
+      x += w;
+    });
+  });
+}
+setLayout("vcv");
+
+// ---------- params ----------
+const P = { style: "flat", stiff: 0.9, weight: 0.22, mem: 0.75, tilt: 12, cam: 16, shadow: 0.7, color: "white", len: "auto" };
+
+// ---------- cables ----------
+let cables = [];
+function makeCable(a, b, len, color) {
+  const A = jacks[a], B = jacks[b];
+  const L = len - 2 * LB;
+  const m = Math.max(3, Math.round(L / SEG));
+  const seg = L / m, n = m + 3;
+  const c = { a, b, len, color, n, seg,
+    x: new Float64Array(n), y: new Float64Array(n), z: new Float64Array(n),
+    px: new Float64Array(n), py: new Float64Array(n), pz: new Float64Array(n),
+    w: new Float64Array(n), rest1: [], rest2: [], rest3: [] };
+  // initial shape: the arc a person leaves when plugging in. Short cables get an upward loop,
+  // longer ones a downward one; both lie on a circle whose arc length equals the free length.
+  const ex = B.x - A.x, ey = B.y - A.y, dist = Math.hypot(ex, ey), half = dist / 2;
+  const e1 = dist > 1e-6 ? [ex / dist, ey / dist, 0] : [1, 0, 0];
+  const up = L / Math.max(dist, 0.1) > 2.5 && L < 26;
+  let v = up ? [0, -0.8, 0.6] : [0, 0.75, 0.66];
+  const dot = v[0] * e1[0] + v[1] * e1[1] + v[2] * e1[2];
+  v = [v[0] - dot * e1[0], v[1] - dot * e1[1], v[2] - dot * e1[2]];
+  const vl = Math.hypot(...v) || 1; const e2 = [v[0] / vl, v[1] / vl, v[2] / vl];
+  let R = half, sweep, th0, ox, oy;
+  if (L > Math.PI * half * 1.02) {
+    let lo = Math.max(half, 1e-3), hi = L;
+    for (let k = 0; k < 60; k++) { const mid = (lo + hi) / 2, len = mid * (2 * Math.PI - 2 * Math.asin(Math.min(1, half / mid))); len > L ? hi = mid : lo = mid; }
+    R = (lo + hi) / 2;
+    const al = Math.asin(Math.min(1, half / R));
+    sweep = 2 * Math.PI - 2 * al; ox = 0; oy = R * Math.cos(al); th0 = Math.atan2(-oy, -half);
+  }
+  const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+  for (let i = 0; i < n; i++) {
+    let x, y, z;
+    if (i === 0) { x = A.x; y = A.y; z = 0; }
+    else if (i === n - 1) { x = B.x; y = B.y; z = 0; }
+    else {
+      const u = (i - 1) / m;
+      let X, Y;
+      if (sweep) { const th = th0 - u * sweep; X = ox + R * Math.cos(th); Y = oy + R * Math.sin(th); }
+      else { X = -half + dist * u; Y = Math.sin(Math.PI * u) * Math.max(0.3, (L - dist) * 0.5); }
+      x = mx + e1[0] * X + e2[0] * Y; y = my + e1[1] * X + e2[1] * Y; z = LB + e1[2] * X + e2[2] * Y;
+    }
+    c.x[i] = c.px[i] = x; c.y[i] = c.py[i] = y; c.z[i] = c.pz[i] = z;
+    c.w[i] = (i <= 1 || i >= n - 2) ? 0 : 1;
+  }
+  const d = i => (i === 0 || i === n - 2) ? LB : seg; // length of link i -> i+1
+  for (let i = 0; i < n - 1; i++) c.rest1.push(d(i));
+  for (let i = 0; i < n - 2; i++) c.rest2.push(d(i) + d(i + 1));
+  for (let i = 0; i < n - 3; i++) c.rest3.push(d(i) + d(i + 1) + d(i + 2));
+  // a cable keeps some of the curve it was plugged in with (PVC/silicone memory)
+  const curl = P.mem * 0.8;
+  for (let i = 0; i < n - 2; i++) c.rest2[i] += (span(c, i, i + 2) - c.rest2[i]) * curl;
+  for (let i = 0; i < n - 3; i++) c.rest3[i] += (span(c, i, i + 3) - c.rest3[i]) * curl;
+  c.plast = 0;
+  return c;
+}
+function span(c, i, j) { return Math.hypot(c.x[j] - c.x[i], c.y[j] - c.y[i], c.z[j] - c.z[i]); }
+function plastic(c, rate) {
+  for (let i = 0; i < c.n - 2; i++) c.rest2[i] += (span(c, i, i + 2) - c.rest2[i]) * rate;
+  for (let i = 0; i < c.n - 3; i++) c.rest3[i] += (span(c, i, i + 3) - c.rest3[i]) * rate;
+}
+
+function chooseLength(a, b) {
+  const A = jacks[a], B = jacks[b];
+  const dist = Math.hypot(B.x - A.x, B.y - A.y);
+  const reach = dist + 2 * LB + 1.5;
+  const auto = STD_LEN.find(l => l >= dist * 1.1 + 2 * LB + 3) || 150;
+  if (P.len === "auto") return { len: auto, note: null };
+  const l = +P.len;
+  if (l < reach) return { len: auto, note: `${l}cmだと届かないので${auto}cmにしました` };
+  return { len: l, note: null };
+}
+
+function connect(a, b, color, len) {
+  const c = makeCable(a, b, len, color);
+  cables.push(c);
+  jacks[a].cable = cables.length - 1; jacks[b].cable = cables.length - 1;
+  rebuildObstacles(); updateCount(); wake();
+  return c;
+}
+function removeCable(ci) {
+  cables.splice(ci, 1);
+  jacks.forEach(j => j.cable = -1);
+  cables.forEach((c, i) => { jacks[c.a].cable = i; jacks[c.b].cable = i; });
+  rebuildObstacles(); updateCount(); wake();
+}
+
+// ---------- obstacles (knobs and plug boots as upright cylinders) ----------
+const OB_CELL = 2;
+let obGrid = new Map();
+function obKey(ix, iy) { return (ix + 100) * 1000 + (iy + 100); }
+function rebuildObstacles() {
+  obGrid = new Map();
+  const add = o => {
+    const x0 = Math.floor((o.x - o.R - RC) / OB_CELL), x1 = Math.floor((o.x + o.R + RC) / OB_CELL);
+    const y0 = Math.floor((o.y - o.R - RC) / OB_CELL), y1 = Math.floor((o.y + o.R + RC) / OB_CELL);
+    for (let ix = x0; ix <= x1; ix++) for (let iy = y0; iy <= y1; iy++) {
+      const k = obKey(ix, iy); if (!obGrid.has(k)) obGrid.set(k, []); obGrid.get(k).push(o);
+    }
+  };
+  knobs.forEach(k => add({ x: k.x, y: k.y, R: k.R * 1.12, H: k.H, owner: -1, end: -1 }));
+  cables.forEach((c, ci) => {
+    add({ x: jacks[c.a].x, y: jacks[c.a].y, R: RB, H: LB, owner: ci, end: 0 });
+    add({ x: jacks[c.b].x, y: jacks[c.b].y, R: RB, H: LB, owner: ci, end: 1 });
+  });
+}
+
+// ---------- solver ----------
+const SUB = 2, ITER = 16;
+let drag = null; // {ci, i, tx, ty, tz}
+// Cables move only after something touches them, then settle and lock in place.
+let awake = 0, still = 0, dirty = true;
+function wake(frames = 100) {
+  if (awake === 0) for (const c of cables) { c.px.set(c.x); c.py.set(c.y); c.pz.set(c.z); }
+  awake = Math.max(awake, frames); still = 0; dirty = true;
+}
+
+function solveDist(c, i, j, rest, k) {
+  const wi = c.w[i], wj = c.w[j], ws = wi + wj;
+  if (ws === 0) return;
+  const dx = c.x[j] - c.x[i], dy = c.y[j] - c.y[i], dz = c.z[j] - c.z[i];
+  const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (d < 1e-9) return;
+  const f = (d - rest) / (d * ws) * k;
+  c.x[i] += dx * wi * f; c.y[i] += dy * wi * f; c.z[i] += dz * wi * f;
+  c.x[j] -= dx * wj * f; c.y[j] -= dy * wj * f; c.z[j] -= dz * wj * f;
+}
+
+// friction on a contact surface: slow sliding sticks (static friction), faster sliding is slowed
+const STICK = 0.02;
+function rub(pa, a, pb, b, i, kinetic) {
+  const va = a[i] - pa[i], vb = b[i] - pb[i];
+  if (va * va + vb * vb < STICK * STICK) { pa[i] = a[i]; pb[i] = b[i]; }
+  else { pa[i] += va * kinetic; pb[i] += vb * kinetic; }
+}
+function collideStatic() {
+  for (let ci = 0; ci < cables.length; ci++) {
+    const c = cables[ci];
+    for (let i = 2; i < c.n - 2; i++) {
+      if (c.w[i] === 0) continue;
+      if (c.y[i] > DESK - RC && c.z[i] > -0.5) { // desk surface in front of the case
+        c.y[i] = DESK - RC; c.py[i] = DESK - RC;
+        rub(c.px, c.x, c.pz, c.z, i, 0.4);
+      }
+      if (c.z[i] < RC) { // panel face
+        c.z[i] = RC; c.pz[i] = RC;
+        rub(c.px, c.x, c.py, c.y, i, 0.35);
+      }
+      const list = obGrid.get(obKey(Math.floor(c.x[i] / OB_CELL), Math.floor(c.y[i] / OB_CELL)));
+      if (!list) continue;
+      for (const o of list) {
+        if (o.owner === ci && ((o.end === 0 && i <= 3) || (o.end === 1 && i >= c.n - 4))) continue;
+        const top = o.H + RC;
+        if (c.z[i] >= top) continue;
+        const dx = c.x[i] - o.x, dy = c.y[i] - o.y, rr = o.R + RC;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= rr * rr) continue;
+        const d = Math.sqrt(d2), pr = rr - d, pv = top - c.z[i];
+        if (pv < pr) { // rest on top
+          c.z[i] = top; c.pz[i] = top;
+          rub(c.px, c.x, c.py, c.y, i, 0.3);
+        } else {
+          const nx = d > 1e-6 ? dx / d : 1, ny = d > 1e-6 ? dy / d : 0;
+          c.x[i] += nx * pr; c.y[i] += ny * pr;
+        }
+      }
+    }
+  }
+}
+
+// cable vs cable: segments in a 3D hash
+const SH = 1.2;
+function shKey(ix, iy, iz) { return ((ix + 512) * 1024 + (iy + 512)) * 1024 + (iz + 512); }
+function collideCables() {
+  const grid = new Map();
+  for (let ci = 0; ci < cables.length; ci++) {
+    const c = cables[ci];
+    for (let i = 1; i < c.n - 2; i++) {
+      const x0 = Math.floor((Math.min(c.x[i], c.x[i + 1]) - RC) / SH), x1 = Math.floor((Math.max(c.x[i], c.x[i + 1]) + RC) / SH);
+      const y0 = Math.floor((Math.min(c.y[i], c.y[i + 1]) - RC) / SH), y1 = Math.floor((Math.max(c.y[i], c.y[i + 1]) + RC) / SH);
+      const z0 = Math.floor((Math.min(c.z[i], c.z[i + 1]) - RC) / SH), z1 = Math.floor((Math.max(c.z[i], c.z[i + 1]) + RC) / SH);
+      const id = ci * 4096 + i;
+      for (let ix = x0; ix <= x1; ix++) for (let iy = y0; iy <= y1; iy++) for (let iz = z0; iz <= z1; iz++) {
+        const k = shKey(ix, iy, iz); let a = grid.get(k); if (!a) { a = []; grid.set(k, a); } a.push(id);
+      }
+    }
+  }
+  const done = new Set();
+  for (const list of grid.values()) {
+    if (list.length < 2) continue;
+    for (let p = 0; p < list.length; p++) for (let q = p + 1; q < list.length; q++) {
+      let s1 = list[p], s2 = list[q];
+      const c1i = Math.floor(s1 / 4096), i = s1 % 4096, c2i = Math.floor(s2 / 4096), j = s2 % 4096;
+      if (c1i === c2i && Math.abs(i - j) <= 3) continue;
+      const key = s1 < s2 ? s1 * 1e7 + s2 : s2 * 1e7 + s1;
+      if (done.has(key)) continue; done.add(key);
+      segPush(cables[c1i], i, cables[c2i], j);
+    }
+  }
+}
+function segPush(A, i, B, j) {
+  const p1x = A.x[i], p1y = A.y[i], p1z = A.z[i], d1x = A.x[i + 1] - p1x, d1y = A.y[i + 1] - p1y, d1z = A.z[i + 1] - p1z;
+  const p2x = B.x[j], p2y = B.y[j], p2z = B.z[j], d2x = B.x[j + 1] - p2x, d2y = B.y[j + 1] - p2y, d2z = B.z[j + 1] - p2z;
+  const rx = p1x - p2x, ry = p1y - p2y, rz = p1z - p2z;
+  const a = d1x * d1x + d1y * d1y + d1z * d1z, e = d2x * d2x + d2y * d2y + d2z * d2z, f = d2x * rx + d2y * ry + d2z * rz;
+  const cl = v => v < 0 ? 0 : v > 1 ? 1 : v;
+  let s, t;
+  const cc = d1x * rx + d1y * ry + d1z * rz, b = d1x * d2x + d1y * d2y + d1z * d2z, den = a * e - b * b;
+  s = den > 1e-12 ? cl((b * f - cc * e) / den) : 0;
+  t = (b * s + f) / e;
+  if (t < 0) { t = 0; s = cl(-cc / a); } else if (t > 1) { t = 1; s = cl((b - cc) / a); }
+  const ax = p1x + d1x * s, ay = p1y + d1y * s, az = p1z + d1z * s;
+  const bx = p2x + d2x * t, by = p2y + d2y * t, bz = p2z + d2z * t;
+  let nx = ax - bx, ny = ay - by, nz = az - bz;
+  const d = Math.sqrt(nx * nx + ny * ny + nz * nz), min = 2 * RC;
+  if (d >= min) return;
+  if (d > 1e-7) { nx /= d; ny /= d; nz /= d; } else { nx = 0; ny = 0; nz = 1; }
+  const wa0 = A.w[i] * (1 - s), wa1 = A.w[i + 1] * s, wb0 = B.w[j] * (1 - t), wb1 = B.w[j + 1] * t;
+  const den2 = wa0 * (1 - s) + wa1 * s + wb0 * (1 - t) + wb1 * t;
+  if (den2 < 1e-9) return;
+  const lam = (min - d) / den2 * 0.8;
+  A.x[i] += nx * wa0 * lam; A.y[i] += ny * wa0 * lam; A.z[i] += nz * wa0 * lam;
+  A.x[i + 1] += nx * wa1 * lam; A.y[i + 1] += ny * wa1 * lam; A.z[i + 1] += nz * wa1 * lam;
+  B.x[j] -= nx * wb0 * lam; B.y[j] -= ny * wb0 * lam; B.z[j] -= nz * wb0 * lam;
+  B.x[j + 1] -= nx * wb1 * lam; B.y[j + 1] -= ny * wb1 * lam; B.z[j + 1] -= nz * wb1 * lam;
+}
+
+function step(dt) {
+  const h = dt / SUB;
+  const g = 981 * 0.9 * P.weight * P.weight + 6;
+  const th = P.tilt * Math.PI / 180;
+  const gy = g * Math.cos(th) * h * h, gz = -g * Math.sin(th) * h * h;
+  const kb = 0.003 + 0.3 * Math.pow(P.stiff, 2.5);
+  // heavy damping like a real cable's internal friction; it tightens further in the last frames before locking
+  const damp = drag ? 0.9 : (awake < 20 ? 0.6 + 0.33 * awake / 20 : 0.93);
+  for (let sub = 0; sub < SUB; sub++) {
+    for (const c of cables) {
+      for (let i = 0; i < c.n; i++) {
+        if (c.w[i] === 0) continue;
+        const vx = (c.x[i] - c.px[i]) * damp, vy = (c.y[i] - c.py[i]) * damp, vz = (c.z[i] - c.pz[i]) * damp;
+        c.px[i] = c.x[i]; c.py[i] = c.y[i]; c.pz[i] = c.z[i];
+        c.x[i] += vx; c.y[i] += vy + gy; c.z[i] += vz + gz;
+      }
+    }
+    if (drag) applyDrag();
+    for (let it = 0; it < ITER; it++) {
+      for (const c of cables) {
+        const n = c.n;
+        for (let i = 0; i < n - 1; i++) solveDist(c, i, i + 1, c.rest1[i], 1);
+        for (let i = 0; i < n - 2; i++) solveDist(c, i, i + 2, c.rest2[i], kb);
+        for (let i = 0; i < n - 3; i++) solveDist(c, i, i + 3, c.rest3[i], kb * 0.55);
+      }
+      if (it % 4 === 3) { collideCables(); collideStatic(); }
+      if (drag) applyDrag();
+    }
+  }
+  // bending by hand leaves a set in the cable; it fades out after release
+  for (const c of cables) {
+    if (drag && cables[drag.ci] === c) c.plast = 1;
+    if (c.plast > 0.01) { plastic(c, 0.04 * P.mem * c.plast); c.plast *= 0.96; }
+  }
+}
+function applyDrag() {
+  const c = cables[drag.ci]; if (!c) { drag = null; return; }
+  const i = drag.i;
+  c.x[i] = c.px[i] = drag.tx; c.y[i] = c.py[i] = drag.ty; c.z[i] = c.pz[i] = Math.max(RC, drag.tz);
+}
+
+// ---------- camera ----------
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+let CW = 0, CH = 0, DPR = 1;
+const CAM = { F: 1, cx: 0, cy: 0, pos: [0, 0, 0], f: [0, 0, -1], r: [1, 0, 0], d: [0, 1, 0] };
+const DIST = 58;
+function setCamera() {
+  const t = P.cam * Math.PI / 180, tx = W / 2, ty = H / 2;
+  CAM.pos = [tx, ty - DIST * Math.sin(t), DIST * Math.cos(t)];
+  CAM.f = norm3(tx - CAM.pos[0], ty - CAM.pos[1], -CAM.pos[2]);
+  CAM.r = [1, 0, 0];
+  const f = CAM.f; // down = r x f
+  CAM.d = [0 * f[2] - 0 * f[1], 0 * f[0] - 1 * f[2], 1 * f[1] - 0 * f[0]];
+  CAM.F = 1; CAM.cx = 0; CAM.cy = 0;
+  let mnx = 1e9, mxx = -1e9, mny = 1e9, mxy = -1e9;
+  for (const [x, y, zs] of [[-0.6, -4.2, [0, 6]], [W + 0.6, -4.2, [0, 6]], [-0.6, DESK, [0, 10]], [W + 0.6, DESK, [0, 10]]]) {
+    for (const z of zs) {
+      const p = project(x, y, z); mnx = Math.min(mnx, p.x); mxx = Math.max(mxx, p.x); mny = Math.min(mny, p.y); mxy = Math.max(mxy, p.y);
+    }
+  }
+  const s = Math.min(CW / (mxx - mnx), CH / (mxy - mny));
+  CAM.F = s; CAM.cx = (CW - (mxx + mnx) * s) / 2; CAM.cy = (CH - (mxy + mny) * s) / 2;
+}
+function project(x, y, z) {
+  const vx = x - CAM.pos[0], vy = y - CAM.pos[1], vz = z - CAM.pos[2];
+  const zc = vx * CAM.f[0] + vy * CAM.f[1] + vz * CAM.f[2];
+  const xc = vx * CAM.r[0] + vy * CAM.r[1] + vz * CAM.r[2];
+  const yc = vx * CAM.d[0] + vy * CAM.d[1] + vz * CAM.d[2];
+  return { x: CAM.cx + CAM.F * xc / zc, y: CAM.cy + CAM.F * yc / zc, d: zc };
+}
+function unproject(sx, sy, zc) {
+  const xc = (sx - CAM.cx) * zc / CAM.F, yc = (sy - CAM.cy) * zc / CAM.F;
+  return [CAM.pos[0] + CAM.r[0] * xc + CAM.d[0] * yc + CAM.f[0] * zc,
+          CAM.pos[1] + CAM.r[1] * xc + CAM.d[1] * yc + CAM.f[1] * zc,
+          CAM.pos[2] + CAM.r[2] * xc + CAM.d[2] * yc + CAM.f[2] * zc];
+}
+const sc = d => CAM.F / d;
+function shadowPt(x, y, z) { const k = z / LIGHT[2]; return [x - LIGHT[0] * k, y - LIGHT[1] * k]; }
+
+// ---------- color helpers ----------
+function hex(h) { return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]; }
+function mix(a, b, t) { return a.map((v, i) => Math.round(v + (b[i] - v) * t)); }
+function rgb(c, a = 1) { return `rgba(${c[0]},${c[1]},${c[2]},${a})`; }
+const SHADE = {};
+for (const k in COLORS) {
+  const b = hex(COLORS[k].body);
+  // flat: one fill per part, a thin edge only to separate overlapping cables
+  const dark = (b[0] + b[1] + b[2]) / 3 < 70;
+  SHADE[k] = { body: rgb(b), side: rgb(mix(b, [0, 0, 0], dark ? 0 : 0.1)),
+    edge: dark ? rgb(mix(b, [255, 255, 255], 0.16)) : rgb(mix(b, [0, 0, 0], 0.32)),
+    // rounded (Easel-like): a soft cylinder built from nested bands, lit from the upper left
+    bands: [
+      [1.0, rgb(mix(b, [0, 0, 0], dark ? 0.35 : 0.5)), 0],
+      [0.84, rgb(mix(b, [0, 0, 0], dark ? 0.1 : 0.26)), 0.07],
+      [0.64, rgb(b), 0.13],
+      [0.4, rgb(mix(b, [255, 255, 255], dark ? 0.12 : 0.2)), 0.19],
+      [0.17, rgba(mix(b, [255, 255, 255], dark ? 0.4 : 0.7), 0.9), 0.25],
+    ] };
+}
+function rgba(c, a) { return rgb(c, a); }
+
+// ---------- panel (cached) ----------
+let panelCv = document.createElement("canvas");
+function drawPanel() {
+  panelCv.width = cv.width; panelCv.height = cv.height;
+  const g = panelCv.getContext("2d");
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  g.fillStyle = "#0a0a0b"; g.fillRect(0, 0, CW, CH);
+  const quad = (x0, y0, x1, y1, z, fill, stroke) => {
+    const a = project(x0, y0, z), b = project(x1, y0, z), c = project(x1, y1, z), d = project(x0, y1, z);
+    g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.lineTo(c.x, c.y); g.lineTo(d.x, d.y); g.closePath();
+    g.fillStyle = fill; g.fill(); if (stroke) { g.strokeStyle = stroke; g.lineWidth = 1; g.stroke(); }
+  };
+  const circ = (x, y, z, r, fill, stroke, lw) => {
+    const p = project(x, y, z); g.beginPath(); g.arc(p.x, p.y, r * sc(p.d), 0, Math.PI * 2);
+    if (fill) { g.fillStyle = fill; g.fill(); }
+    if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw || 1; g.stroke(); }
+  };
+  // desk in front of the case
+  { const a = project(-4, DESK, 0), b = project(W + 4, DESK, 0), c2 = project(W + 4, DESK, 30), d2 = project(-4, DESK, 30);
+    g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.lineTo(c2.x, c2.y); g.lineTo(d2.x, d2.y); g.closePath();
+    g.fillStyle = "#121214"; g.fill(); }
+  if (MODE === "vcv") {
+    quad(-0.6, -0.9, W + 0.6, H + 0.9, -0.5, "#1c1c1e");
+    if (shotReady) {
+      // the screenshot is the panel face at z = 0; drawn in thin rows so the camera tilt keeps perspective
+      const rows = 160, ph = SHOT.ph / rows;
+      for (let r = 0; r < rows; r++) {
+        const y0 = (r * ph) / SHOT.ph * H, y1 = ((r + 1) * ph) / SHOT.ph * H;
+        const a = project(0, y0, 0), b = project(W, y0, 0), d = project(0, y1, 0);
+        g.drawImage(shotImg, 0, r * ph, SHOT.pw, ph, a.x, a.y, b.x - a.x, d.y - a.y + 0.6);
+      }
+    }
+    return;
+  }
+  // case and rails
+  quad(-0.6, -0.9, W + 0.6, H + 0.9, -0.5, "#1c1c1e");
+  for (let r = 0; r <= 2; r++) quad(-0.6, r * ROW - 0.35, W + 0.6, r * ROW + 0.35, 0, "#2c2c2f");
+  modules.forEach((m, idx) => {
+    quad(m.x + 0.03, m.y + 0.06, m.x + m.w - 0.03, m.y + m.h - 0.06, 0, idx % 2 ? "#151517" : "#18181a", "#26262a");
+    for (const [sx, sy] of [[m.x + 0.75, m.y + 0.3], [m.x + m.w - 0.75, m.y + m.h - 0.3]]) circ(sx, sy, 0, 0.16, "#3a3a3e", "#0b0b0c");
+  });
+  // knob shadows, knobs
+  knobs.forEach(k => {
+    const [sx, sy] = shadowPt(k.x, k.y, k.H * 0.8);
+    const p = project((k.x + sx) / 2, (k.y + sy) / 2, 0);
+    g.beginPath(); g.arc(p.x, p.y, k.R * 1.25 * sc(p.d), 0, Math.PI * 2); g.fillStyle = "rgba(0,0,0,0.35)"; g.fill();
+  });
+  knobs.forEach(k => {
+    for (let s = 0; s <= 6; s++) circ(k.x, k.y, k.H * 0.72 * s / 6, k.R * 1.12, "#1e1e20", s === 6 ? "#3b3b3f" : null);
+    for (let s = 0; s <= 3; s++) circ(k.x, k.y, k.H * (0.72 + 0.28 * s / 3), k.R * 0.8, "#cfcdc6");
+    circ(k.x, k.y, k.H, k.R * 0.8, "#f1efe8", "rgba(0,0,0,0.25)");
+    const p = project(k.x, k.y, k.H), q = project(k.x + Math.sin(k.ang) * k.R * 0.7, k.y - Math.cos(k.ang) * k.R * 0.7, k.H);
+    g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(q.x, q.y); g.strokeStyle = "#2a2a2c"; g.lineWidth = Math.max(1, 0.09 * sc(p.d)); g.lineCap = "round"; g.stroke();
+  });
+  // jacks
+  jacks.forEach(j => {
+    const p = project(j.x, j.y, 0.12), s = sc(p.d);
+    g.beginPath();
+    for (let a = 0; a < 6; a++) { const t = a * Math.PI / 3 + Math.PI / 6; g[a ? "lineTo" : "moveTo"](p.x + Math.cos(t) * 0.46 * s, p.y + Math.sin(t) * 0.46 * s); }
+    g.closePath(); g.fillStyle = "#8f8e8a"; g.fill();
+    circ(j.x, j.y, 0.14, 0.34, "#c9c8c3", "#6c6b68");
+    circ(j.x, j.y, 0.15, 0.19, "#050505");
+  });
+}
+
+// ---------- render ----------
+const proj = []; // per-cable projected physics points (for picking)
+const dense = []; // per-cable smoothed curve: {x, y, d} on screen plus world z
+const SUBD = 5;
+// Draw a smooth curve, not the 1cm physics links: one light smoothing pass in 3D,
+// then a Catmull-Rom spline through the points. The jack base point steers the
+// spline so the cable still leaves the boot straight toward the viewer.
+function densify(c, out) {
+  const n = c.n, X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n);
+  for (let i = 0; i < n; i++) { X[i] = c.x[i]; Y[i] = c.y[i]; Z[i] = c.z[i]; }
+  for (let i = 2; i < n - 2; i++) {
+    X[i] = 0.25 * c.x[i - 1] + 0.5 * c.x[i] + 0.25 * c.x[i + 1];
+    Y[i] = 0.25 * c.y[i - 1] + 0.5 * c.y[i] + 0.25 * c.y[i + 1];
+    Z[i] = 0.25 * c.z[i - 1] + 0.5 * c.z[i] + 0.25 * c.z[i + 1];
+  }
+  out.length = 0;
+  for (let j = 1; j < n - 2; j++) {
+    const a = j - 1, b = j, cc = j + 1, d = Math.min(n - 1, j + 2);
+    for (let k = 0; k < SUBD; k++) {
+      const t = k / SUBD, t2 = t * t, t3 = t2 * t;
+      const f0 = -0.5 * t3 + t2 - 0.5 * t, f1 = 1.5 * t3 - 2.5 * t2 + 1, f2 = -1.5 * t3 + 2 * t2 + 0.5 * t, f3 = 0.5 * t3 - 0.5 * t2;
+      const x = f0 * X[a] + f1 * X[b] + f2 * X[cc] + f3 * X[d];
+      const y = f0 * Y[a] + f1 * Y[b] + f2 * Y[cc] + f3 * Y[d];
+      const z = f0 * Z[a] + f1 * Z[b] + f2 * Z[cc] + f3 * Z[d];
+      const p = project(x, y, z); p.wx = x; p.wy = y; p.wz = z; out.push(p);
+    }
+  }
+  const p = project(X[n - 2], Y[n - 2], Z[n - 2]); p.wx = X[n - 2]; p.wy = Y[n - 2]; p.wz = Z[n - 2]; out.push(p);
+  // where the light falls across the tube: the light direction projected on the curve's normal.
+  // It changes smoothly along the cable, so the highlight never jumps sides.
+  for (let i = 0; i < out.length; i++) {
+    const A = out[Math.max(0, i - 1)], B = out[Math.min(out.length - 1, i + 1)];
+    let tx = B.x - A.x, ty = B.y - A.y; const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l;
+    const nx = -ty, ny = tx, k = nx * LX + ny * LY;
+    out[i].ox = nx * k; out[i].oy = ny * k; out[i].nx = nx; out[i].ny = ny; out[i].tx = tx; out[i].ty = ty;
+  }
+}
+const LX = -0.45, LY = -0.89;
+function render() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.drawImage(panelCv, 0, 0, CW, CH);
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  // project points
+  cables.forEach((c, ci) => {
+    const a = proj[ci] || (proj[ci] = []);
+    a.length = c.n;
+    for (let i = 0; i < c.n; i++) a[i] = project(c.x[i], c.y[i], c.z[i]);
+    densify(c, dense[ci] || (dense[ci] = []));
+  });
+  proj.length = cables.length; dense.length = cables.length;
+  // shadows
+  const sa = P.shadow;
+  if (sa > 0) {
+    cables.forEach((c, ci) => {
+      for (const end of [c.a, c.b]) {
+        const J = jacks[end], [sx, sy] = shadowPt(J.x, J.y, LB);
+        const p0 = project(J.x, J.y, 0), p1 = project(sx, sy, 0);
+        ctx.strokeStyle = `rgba(0,0,0,${0.38 * sa})`; ctx.lineWidth = 2 * RB * sc(p0.d);
+        ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+      }
+      const D = dense[ci], step = SUBD * 2;
+      for (let s = 0; s < D.length - 1; s += step) {
+        const e = Math.min(D.length - 1, s + step), zm = (D[s].wz + D[e].wz) / 2;
+        const alpha = 0.38 * sa * Math.exp(-zm / 7);
+        if (alpha < 0.01) continue;
+        ctx.strokeStyle = `rgba(0,0,0,${alpha})`;
+        ctx.beginPath();
+        for (let i = s; i <= e; i++) { const [sx, sy] = shadowPt(D[i].wx, D[i].wy, D[i].wz); const p = project(sx, sy, 0); i === s ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y); }
+        const lw = 2 * RC * sc(DIST) * (1 + zm * 0.12);
+        ctx.lineCap = "butt"; ctx.lineWidth = lw; ctx.stroke();
+        if (P.style === "round") { ctx.strokeStyle = `rgba(0,0,0,${alpha * 0.35})`; ctx.lineWidth = lw * 2.2; ctx.stroke(); }
+      }
+    });
+  }
+  ctx.lineCap = "round";
+  // selection
+  if (selected >= 0) {
+    const p = project(jacks[selected].x, jacks[selected].y, 0.2);
+    ctx.beginPath(); ctx.arc(p.x, p.y, 0.62 * sc(p.d), 0, Math.PI * 2);
+    ctx.strokeStyle = SHADE[P.color].body; ctx.lineWidth = 2; ctx.stroke();
+  }
+  // depth-sorted items
+  const items = [];
+  cables.forEach((c, ci) => {
+    items.push({ t: 0, ci, end: 0, d: project(jacks[c.a].x, jacks[c.a].y, LB * 0.5).d });
+    items.push({ t: 0, ci, end: 1, d: project(jacks[c.b].x, jacks[c.b].y, LB * 0.5).d });
+    const D = dense[ci], size = SUBD * 2;
+    for (let s = 0; s < D.length - 1; s += size) {
+      const e = Math.min(D.length - 1, s + size);
+      let d = 0; for (let i = s; i <= e; i++) d += D[i].d;
+      items.push({ t: 1, ci, s, e, d: d / (e - s + 1) });
+    }
+  });
+  items.sort((p, q) => q.d - p.d);
+  cables.forEach((c, ci) => { const D = dense[ci]; let d = 0; for (const p of D) d += p.d; c.lw = Math.max(1.4, 2 * RC * sc(d / D.length)); });
+  for (const it of items) it.t === 0 ? drawBoot(it.ci, it.end) : drawChunk(it.ci, it.s, it.e);
+}
+function polyline(a, s, e, ox = 0, oy = 0) {
+  ctx.beginPath(); ctx.moveTo(a[s].x + ox, a[s].y + oy);
+  for (let i = s + 1; i <= e; i++) ctx.lineTo(a[i].x + ox, a[i].y + oy);
+}
+function shifted(a, s, e, f) {
+  ctx.beginPath(); ctx.moveTo(a[s].x + a[s].ox * f, a[s].y + a[s].oy * f);
+  for (let i = s + 1; i <= e; i++) ctx.lineTo(a[i].x + a[i].ox * f, a[i].y + a[i].oy * f);
+}
+// Clip a piece of cable to its own span, cut square across the tube at both ends.
+// Neighbouring pieces share the same cut, so the shaded bands meet without a seam.
+function clipSpan(a, s, e, R) {
+  const last = a.length - 1;
+  const ext = i => (i === 0 || i === last) ? R : 0.7;
+  ctx.beginPath();
+  for (let i = s; i <= e; i++) {
+    const p = a[i], t = i === s ? -ext(i) : i === e ? ext(i) : 0;
+    const x = p.x + p.tx * t + p.nx * R, y = p.y + p.ty * t + p.ny * R;
+    i === s ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  for (let i = e; i >= s; i--) {
+    const p = a[i], t = i === s ? -ext(i) : i === e ? ext(i) : 0;
+    ctx.lineTo(p.x + p.tx * t - p.nx * R, p.y + p.ty * t - p.ny * R);
+  }
+  ctx.closePath(); ctx.clip();
+}
+function drawChunk(ci, s, e) {
+  const c = cables[ci], a = dense[ci], sh = SHADE[c.color];
+  const w = c.lw;
+  const s0 = Math.max(0, s - 3), e0 = Math.min(a.length - 1, e + 3);
+  if (P.style === "round") {
+    ctx.save(); clipSpan(a, s, e, w * 0.85);
+    sh.bands.forEach(([f, col, off], k) => {
+      ctx.strokeStyle = col; ctx.lineWidth = Math.max(0.6, w * f);
+      k === 0 ? polyline(a, s0, e0) : shifted(a, s0, e0, w * off); ctx.stroke();
+    });
+    ctx.restore();
+    return;
+  }
+  ctx.strokeStyle = sh.edge; ctx.lineWidth = w + 1; polyline(a, s, e); ctx.stroke();
+  ctx.strokeStyle = sh.body; ctx.lineWidth = w; polyline(a, s0, e0); ctx.stroke();
+}
+function drawBoot(ci, end) {
+  const c = cables[ci], J = jacks[end ? c.b : c.a], sh = SHADE[c.color];
+  const b = project(J.x, J.y, 0), t = project(J.x, J.y, LB);
+  const r0 = RB * sc(b.d), r1 = RB * sc(t.d);
+  let dx = t.x - b.x, dy = t.y - b.y; const L = Math.hypot(dx, dy);
+  ctx.lineWidth = 1;
+  if (L > 0.5) {
+    dx /= L; dy /= L; const nx = -dy, ny = dx;
+    ctx.beginPath();
+    ctx.moveTo(b.x + nx * r0, b.y + ny * r0); ctx.lineTo(t.x + nx * r1, t.y + ny * r1);
+    ctx.lineTo(t.x - nx * r1, t.y - ny * r1); ctx.lineTo(b.x - nx * r0, b.y - ny * r0); ctx.closePath();
+    if (P.style === "round") {
+      const k = nx * LX + ny * LY, gx = nx * k, gy = ny * k, gl = Math.hypot(gx, gy) || 1;
+      const m = { x: (b.x + t.x) / 2, y: (b.y + t.y) / 2 }, r = (r0 + r1) / 2;
+      const gr = ctx.createLinearGradient(m.x - gx / gl * r, m.y - gy / gl * r, m.x + gx / gl * r, m.y + gy / gl * r);
+      const B = sh.bands; gr.addColorStop(0, B[0][1]); gr.addColorStop(0.45, B[2][1]); gr.addColorStop(0.8, B[3][1]); gr.addColorStop(1, B[1][1]);
+      ctx.fillStyle = gr;
+    } else ctx.fillStyle = sh.side;
+    ctx.fill();
+    ctx.beginPath(); ctx.arc(b.x, b.y, r0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = sh.edge; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(b.x + nx * r0, b.y + ny * r0); ctx.lineTo(t.x + nx * r1, t.y + ny * r1);
+    ctx.moveTo(b.x - nx * r0, b.y - ny * r0); ctx.lineTo(t.x - nx * r1, t.y - ny * r1); ctx.stroke();
+    // ribs near the cable end
+    ctx.lineWidth = Math.max(0.7, r1 * 0.09);
+    for (const u of [0.66, 0.78, 0.9]) {
+      const mx = b.x + (t.x - b.x) * u, my = b.y + (t.y - b.y) * u, rr = r0 + (r1 - r0) * u;
+      ctx.beginPath(); ctx.moveTo(mx + nx * rr, my + ny * rr); ctx.lineTo(mx - nx * rr, my - ny * rr); ctx.stroke();
+    }
+  }
+  // end face where the cable leaves
+  ctx.beginPath(); ctx.arc(t.x, t.y, r1, 0, Math.PI * 2);
+  if (P.style === "round") {
+    const B = sh.bands, gr = ctx.createRadialGradient(t.x + LX * r1 * 0.4, t.y + LY * r1 * 0.4, r1 * 0.05, t.x, t.y, r1);
+    gr.addColorStop(0, B[4][1]); gr.addColorStop(0.35, B[3][1]); gr.addColorStop(0.75, B[2][1]); gr.addColorStop(1, B[0][1]);
+    ctx.fillStyle = gr; ctx.fill(); return;
+  }
+  ctx.fillStyle = sh.body; ctx.fill(); ctx.strokeStyle = sh.edge; ctx.lineWidth = 1; ctx.stroke();
+}
+
+// ---------- input ----------
+let selected = -1, ptr = null;
+function canvasPos(e) { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+function hitJack(x, y) {
+  let best = -1, bd = 1e9;
+  jacks.forEach((j, i) => {
+    const p = project(j.x, j.y, 0), t = project(j.x, j.y, LB);
+    const tol = Math.max(14, 0.7 * sc(p.d));
+    const d = j.cable >= 0 ? distSeg(x, y, p, t) : Math.hypot(x - p.x, y - p.y);
+    if (d < tol && d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
+function distSeg(x, y, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+  const u = l2 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / l2)) : 0;
+  return Math.hypot(x - a.x - dx * u, y - a.y - dy * u);
+}
+function hitCable(x, y) {
+  let best = null, bd = 20;
+  cables.forEach((c, ci) => {
+    const a = proj[ci]; if (!a) return;
+    for (let i = 3; i < c.n - 3; i++) { const d = Math.hypot(x - a[i].x, y - a[i].y); if (d < bd) { bd = d; best = { ci, i }; } }
+  });
+  return best;
+}
+cv.addEventListener("pointerdown", e => {
+  const [x, y] = canvasPos(e);
+  cv.setPointerCapture(e.pointerId);
+  const hc = hitCable(x, y), hj = hitJack(x, y);
+  const jackFirst = hj >= 0 && (!hc || Math.hypot(x - project(jacks[hj].x, jacks[hj].y, 0).x, y - project(jacks[hj].x, jacks[hj].y, 0).y) < 12);
+  ptr = { x0: x, y0: y, moved: false, jack: hj, cable: jackFirst ? null : hc };
+  if (ptr.cable) {
+    const c = cables[ptr.cable.ci], i = ptr.cable.i;
+    c.w[i] = 0;
+    drag = { ci: ptr.cable.ci, i, tx: c.x[i], ty: c.y[i], tz: c.z[i], zc: project(c.x[i], c.y[i], c.z[i]).d };
+  }
+});
+cv.addEventListener("pointermove", e => {
+  if (!ptr) return;
+  const [x, y] = canvasPos(e);
+  if (Math.hypot(x - ptr.x0, y - ptr.y0) > 6) ptr.moved = true;
+  if (drag) { const [wx, wy, wz] = unproject(x, y, drag.zc); drag.tx = wx; drag.ty = wy; drag.tz = wz; }
+});
+function endPointer() {
+  if (!ptr) return;
+  if (drag) { const c = cables[drag.ci]; if (c) c.w[drag.i] = 1; drag = null; wake(100); }
+  if (!ptr.moved && ptr.jack >= 0 && !ptr.cable) tapJack(ptr.jack);
+  ptr = null;
+}
+cv.addEventListener("pointerup", endPointer);
+cv.addEventListener("pointercancel", () => { if (drag) { const c = cables[drag.ci]; if (c) c.w[drag.i] = 1; drag = null; } ptr = null; });
+function tapJack(j) {
+  if (jacks[j].cable >= 0) { removeCable(jacks[j].cable); selected = -1; toast("抜きました"); return; }
+  dirty = true;
+  if (selected < 0) { selected = j; return; }
+  if (selected === j) { selected = -1; return; }
+  const { len, note } = chooseLength(selected, j);
+  connect(selected, j, P.color, len);
+  selected = -1;
+  toast(note || `${len}cmでつなぎました`);
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+let toastT = 0;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 1800); }
+function updateCount() { $("count").textContent = `ケーブル ${cables.length}本`; }
+const chips = $("chips");
+for (const k in COLORS) {
+  const b = document.createElement("button");
+  b.className = "chip"; b.type = "button"; b.style.background = COLORS[k].body;
+  b.setAttribute("aria-label", COLORS[k].label); b.setAttribute("aria-pressed", k === P.color);
+  b.onclick = () => { P.color = k; [...chips.children].forEach(c => c.setAttribute("aria-pressed", c === b)); };
+  chips.appendChild(b);
+}
+$("len").onchange = e => { P.len = e.target.value; };
+const fmt = { thick: v => `${(v / 10).toFixed(1)} mm`, mem: v => `${v}%`, stiff: v => `${v}%`, weight: v => `${v}%`, tilt: v => `${v}°`, cam: v => `${v}°`, shadow: v => `${v}%` };
+for (const id of ["thick", "stiff", "weight", "mem", "tilt", "cam", "shadow"]) {
+  const el = $(id), out = $(id + "O");
+  const apply = () => {
+    const v = +el.value; out.textContent = fmt[id](v);
+    if (id === "thick") {
+      // cable diameter in mm; the molded boot gets slimmer or fatter with it, like real slim cables
+      RC = v / 200; RB = 0.13 + RC * 1.25;
+      rebuildObstacles(); wake(); return;
+    }
+    if (id === "tilt" || id === "cam") P[id] = v; else P[id] = v / 100;
+    if (id === "cam") { setCamera(); drawPanel(); }
+    if (id === "stiff" || id === "weight" || id === "tilt" || id === "mem") wake(); else dirty = true;
+  };
+  el.addEventListener("input", apply); apply();
+}
+
+function samplePatch() {
+  cables = []; jacks.forEach(j => j.cable = -1); selected = -1;
+  seed = 3;
+  const free = () => jacks.map((j, i) => i).filter(i => jacks[i].cable < 0);
+  const pick = (minD, maxD, color, len) => {
+    const f = free();
+    for (let tries = 0; tries < 400; tries++) {
+      const a = f[Math.floor(rnd() * f.length)], b = f[Math.floor(rnd() * f.length)];
+      if (a === b || jacks[a].cable >= 0 || jacks[b].cable >= 0) continue;
+      const d = Math.hypot(jacks[a].x - jacks[b].x, jacks[a].y - jacks[b].y);
+      if (d < minD || d > maxD) continue;
+      const L = len || (STD_LEN.find(l => l >= d * 1.1 + 2 * LB + 3) || 150);
+      connect(a, b, color, L); return;
+    }
+  };
+  const big = MODE === "vcv";
+  for (let i = 0; i < (big ? 6 : 4); i++) pick(1.5, 3.6, "pink", 15);
+  pick(9, 14, "white", 45); pick(12, 19, "white", 60); pick(14, 22, "white", 60);
+  if (big) { pick(16, 26, "white", 60); pick(8, 13, "white", 45); }
+  pick(5, 9, "black", 30); pick(4, 8, "purple", 30);
+  if (big) pick(6, 10, "pink", 30);
+  rebuildObstacles(); updateCount();
+  awake = 100; for (let i = 0; i < 240; i++) step(1 / 60);
+  awake = 0; wake(100);
+}
+$("bSample").onclick = samplePatch;
+function switchMode(mode) {
+  if (mode === MODE) return;
+  cables = []; selected = -1;
+  setLayout(mode);
+  $("mVcv").setAttribute("aria-pressed", mode === "vcv"); $("mFake").setAttribute("aria-pressed", mode !== "vcv");
+  resize(); samplePatch();
+}
+$("mVcv").onclick = () => switchMode("vcv");
+function setStyle(st) { P.style = st; $("sFlat").setAttribute("aria-pressed", st === "flat"); $("sRound").setAttribute("aria-pressed", st === "round"); dirty = true; }
+$("sFlat").onclick = () => setStyle("flat");
+$("sRound").onclick = () => setStyle("round");
+$("mFake").onclick = () => switchMode("fake");
+$("bClear").onclick = () => { cables = []; jacks.forEach(j => j.cable = -1); selected = -1; rebuildObstacles(); updateCount(); dirty = true; };
+$("bRandom").onclick = () => {
+  const colors = Object.keys(COLORS); let added = 0;
+  for (let tries = 0; tries < 300 && added < 5; tries++) {
+    const f = jacks.map((j, i) => i).filter(i => jacks[i].cable < 0);
+    if (f.length < 2) break;
+    const a = f[Math.floor(Math.random() * f.length)], b = f[Math.floor(Math.random() * f.length)];
+    if (a === b) continue;
+    const { len } = chooseLength(a, b);
+    connect(a, b, colors[Math.floor(Math.random() * colors.length)], len); added++;
+  }
+  if (!added) toast("空いているジャックが足りません");
+};
+
+// ---------- sizing and loop ----------
+function resize() {
+  const r = $("stage").getBoundingClientRect();
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  CW = r.width; CH = Math.round(CW * (H + 5.6) / (W + 1.2));
+  cv.style.height = CH + "px";
+  cv.width = Math.round(CW * DPR); cv.height = Math.round(CH * DPR);
+  setCamera(); drawPanel(); dirty = true;
+}
+new ResizeObserver(resize).observe($("stage"));
+resize();
+samplePatch();
+let last = performance.now();
+function frame(now) {
+  last = now;
+  if (!document.hidden) {
+    if (awake > 0 || drag) {
+      // after a release the settling runs several steps per frame, so the cable drops into place and locks
+      const k = drag ? 1 : 4;
+      for (let s = 0; s < k; s++) step(1 / 60);
+      if (!drag) {
+        awake--;
+        let v = 0;
+        for (const c of cables) for (let i = 2; i < c.n - 2; i++) v = Math.max(v, Math.abs(c.x[i] - c.px[i]) + Math.abs(c.y[i] - c.py[i]) + Math.abs(c.z[i] - c.pz[i]));
+        still = v < 0.004 ? still + 1 : 0;
+        if (still > 12) awake = 0;
+      }
+      dirty = true;
+    }
+    if (dirty) { render(); dirty = false; }
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
