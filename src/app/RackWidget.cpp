@@ -222,6 +222,16 @@ void RackWidget::onHoverKey(const HoverKeyEvent& e) {
 }
 
 void RackWidget::onButton(const ButtonEvent& e) {
+	// Cable physics draws plugs in perspective, off their ports: a press on a plug goes to its port
+	if (e.action == GLFW_PRESS) {
+		PortWidget* pw = internal->rig->plugAt(e.pos);
+		if (pw) {
+			ButtonEvent e2 = e;
+			e2.pos = pw->box.size.div(2);
+			pw->onButton(e2);
+			return;
+		}
+	}
 	// Cables lie on top of the modules: a press on a cable's body grabs it to shape it
 	if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
 		if (internal->rig->grab(e.pos)) {

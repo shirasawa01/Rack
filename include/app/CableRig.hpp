@@ -10,6 +10,7 @@ namespace app {
 
 struct RackWidget;
 struct CableWidget;
+struct PortWidget;
 
 
 namespace cablephysics {
@@ -38,6 +39,10 @@ struct Look {
 	float shadowSpread = 0.12f;
 	/** Round style: a second, wider and fainter shadow stroke */
 	float shadowBlurWidth = 2.2f, shadowBlurAlpha = 0.35f;
+	/** Flat: the boot's side, toward black */
+	float sideToBlack = 0.1f;
+	/** Ribs near the cable end of the boot, as fractions from the base */
+	float ribs[3] = {0.66f, 0.78f, 0.9f};
 	/** Mean channel (0..255) below which a color counts as dark */
 	float darkBelow = 70.f;
 	/** Flat edge: toward black (light colors) or white (dark colors) */
@@ -82,6 +87,8 @@ struct Rig {
 	/** Shadows, cables and plugs, in place of the original cable and plug layers. */
 	void draw(const widget::Widget::DrawArgs& args);
 
+	/** The port whose plug (boot, drawn in perspective) is under `pos`, or NULL. Clicks there belong to the port. */
+	PortWidget* plugAt(math::Vec pos);
 	/** Starts shaping the cable under `pos` (rack coordinates). False if there is none. */
 	bool grab(math::Vec pos);
 	void dragTo(math::Vec pos);

@@ -42,6 +42,10 @@ float caseTilt = 12.0;
 float cableThickness = 3.8;
 float cableShadow = 0.7;
 float cableFriction = 0.5;
+bool cablePerspective = true;
+float caseWidth = 104;
+float caseHeight = 6;
+float cameraDistance = 58;
 float rackBrightness = 1.0;
 float spotlightBrightness = 0.2;
 float spotlightRadius = 300.0;
@@ -177,6 +181,10 @@ json_t* toJson() {
 	json_object_set_new(rootJ, "cableThickness", json_real(cableThickness));
 	json_object_set_new(rootJ, "cableShadow", json_real(cableShadow));
 	json_object_set_new(rootJ, "cableFriction", json_real(cableFriction));
+	json_object_set_new(rootJ, "cablePerspective", json_boolean(cablePerspective));
+	json_object_set_new(rootJ, "caseWidth", json_real(caseWidth));
+	json_object_set_new(rootJ, "caseHeight", json_real(caseHeight));
+	json_object_set_new(rootJ, "cameraDistance", json_real(cameraDistance));
 
 	json_object_set_new(rootJ, "rackBrightness", json_real(rackBrightness));
 
@@ -410,6 +418,22 @@ void fromJson(json_t* rootJ) {
 	json_t* cableFrictionJ = json_object_get(rootJ, "cableFriction");
 	if (cableFrictionJ)
 		cableFriction = math::clamp((float) json_number_value(cableFrictionJ), 0.f, 1.f);
+
+	json_t* cablePerspectiveJ = json_object_get(rootJ, "cablePerspective");
+	if (cablePerspectiveJ)
+		cablePerspective = json_boolean_value(cablePerspectiveJ);
+
+	json_t* caseWidthJ = json_object_get(rootJ, "caseWidth");
+	if (caseWidthJ)
+		caseWidth = math::clamp((float) json_number_value(caseWidthJ), 10.f, 500.f);
+
+	json_t* caseHeightJ = json_object_get(rootJ, "caseHeight");
+	if (caseHeightJ)
+		caseHeight = math::clamp((float) json_number_value(caseHeightJ), 3.f, 30.f);
+
+	json_t* cameraDistanceJ = json_object_get(rootJ, "cameraDistance");
+	if (cameraDistanceJ)
+		cameraDistance = math::clamp((float) json_number_value(cameraDistanceJ), 30.f, 200.f);
 
 	json_t* rackBrightnessJ = json_object_get(rootJ, "rackBrightness");
 	if (rackBrightnessJ)

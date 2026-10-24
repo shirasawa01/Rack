@@ -544,6 +544,11 @@ struct ViewButton : MenuButton {
 			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableFriction, 0, 1, 0.5, 100, "Friction between cables", "%")));
 			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::caseTilt, 0, 35, 12, 1, "Case tilt", "°")));
 			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cableShadow, 0, 1, 0.7, 100, "Shadow", "%")));
+			menu->addChild(new ui::MenuSeparator);
+			menu->addChild(createBoolPtrMenuItem("Perspective", "", &settings::cablePerspective));
+			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::caseWidth, 20, 312, 104, 1, "Case width", " HP")));
+			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::caseHeight, 3, 18, 6, 1, "Case height", " U")));
+			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cameraDistance, 30, 200, 58, 1, "Camera distance", " cm")));
 		}));
 
 		RackBrightnessSlider* rackBrightnessSlider = new RackBrightnessSlider;

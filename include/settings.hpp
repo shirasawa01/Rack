@@ -73,6 +73,13 @@ extern float cableThickness;
 extern float cableShadow;
 /** Friction between cables in the range [0, 1]. 0.5 is the same as on the panel. */
 extern float cableFriction;
+/** Cables and plugs drawn in perspective from a camera straight in front of the case's centre (panels stay as they are) */
+extern bool cablePerspective;
+/** The case: from the rack's grid origin, this wide (HP) and this tall (U). Its centre is where the camera looks. */
+extern float caseWidth;
+extern float caseHeight;
+/** Camera distance from the panel, cm */
+extern float cameraDistance;
 extern float rackBrightness;
 extern float spotlightBrightness;
 extern float spotlightRadius;

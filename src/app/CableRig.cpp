@@ -31,6 +31,50 @@ bool enabled() {
 }
 
 
+/** A camera straight in front of the case's centre, like the prototype's (its "camera height 0°" still has perspective).
+Only what stands off the panel moves on screen: points at z = 0 stay where they are, so the panels and their ports are untouched. */
+struct Camera {
+	bool on = false;
+	/** cm */
+	double cx = 0, cy = 0, D = 58;
+	/** Bumped when the camera changes, for the draw cache */
+	uint64_t serial = 0;
+
+	double scale(double z) const {
+		return on ? D / std::max(1.0, D - z) : 1.0;
+	}
+	/** World (cm) to rack px */
+	void project(double x, double y, double z, float* sx, float* sy) const {
+		double k = scale(z);
+		*sx = (cx + (x - cx) * k) * PX_PER_CM;
+		*sy = (cy + (y - cy) * k) * PX_PER_CM;
+	}
+	/** Rack px to the world point at height z (cm) */
+	void unproject(float sx, float sy, double z, double* x, double* y) const {
+		double k = scale(z);
+		*x = cx + (sx / PX_PER_CM - cx) / k;
+		*y = cy + (sy / PX_PER_CM - cy) / k;
+	}
+	void update() {
+		Camera c;
+		c.on = settings::cablePerspective;
+		// The case starts at the rack's grid origin, where a patch's module at pos [0, 0] sits
+		c.cx = (RACK_OFFSET.x + settings::caseWidth * RACK_GRID_WIDTH / 2) / PX_PER_CM;
+		c.cy = (RACK_OFFSET.y + settings::caseHeight / 3 * RACK_GRID_HEIGHT / 2) / PX_PER_CM;
+		c.D = settings::cameraDistance;
+		if (c.on != on || c.cx != cx || c.cy != cy || c.D != D) {
+			on = c.on;
+			cx = c.cx;
+			cy = c.cy;
+			D = c.D;
+			serial++;
+		}
+	}
+};
+
+static Camera camera;
+
+
 Rig* getRig() {
 	return currentRig;
 }
@@ -58,7 +102,10 @@ struct Entry {
 	NVGcolor color;
 	// Draw cache
 	uint64_t denseVersion = UINT64_MAX;
+	uint64_t denseCamera = UINT64_MAX;
 	std::vector<Pt> dense;
+	/** Mean perspective scale along the cable, for its width */
+	double meanScale = 1;
 
 	~Entry() {
 		if (pendingJ)
@@ -301,6 +348,7 @@ void Rig::forget(CableWidget* cw) {
 void Rig::step(RackWidget* rack) {
 	Internal& I = *internal;
 	World& W = I.world;
+	camera.update();
 	if (!enabled()) {
 		if (!I.entries.empty())
 			I.clear();
@@ -414,9 +462,10 @@ void Rig::step(RackWidget* rack) {
 
 static void densify(Entry* e) {
 	const Cable& c = e->cable;
-	if (e->denseVersion == c.version)
+	if (e->denseVersion == c.version && e->denseCamera == camera.serial)
 		return;
 	e->denseVersion = c.version;
+	e->denseCamera = camera.serial;
 	const int n = c.n;
 	// One light smoothing pass in 3D, then a Catmull-Rom spline through the points.
 	// The jack base point steers the spline so the cable still leaves the boot straight toward the viewer.
@@ -434,8 +483,7 @@ static void densify(Entry* e) {
 		p.wx = x;
 		p.wy = y;
 		p.wz = z;
-		p.x = x * PX_PER_CM;
-		p.y = y * PX_PER_CM;
+		camera.project(x, y, z, &p.x, &p.y);
 		out.push_back(p);
 	};
 	for (int j = 1; j < n - 2; j++) {
@@ -449,6 +497,10 @@ static void densify(Entry* e) {
 		}
 	}
 	push(X[n - 2], Y[n - 2], Z[n - 2]);
+	double scale = 0;
+	for (const Pt& p : out)
+		scale += camera.scale(p.wz);
+	e->meanScale = scale / out.size();
 	// Where the light falls across the tube: the light direction projected on the curve's normal.
 	// It changes smoothly along the cable, so the highlight never jumps sides.
 	const int m = out.size();
@@ -486,7 +538,7 @@ static NVGcolor mixColor(NVGcolor c, float t) {
 
 
 struct Shade {
-	NVGcolor body, edge;
+	NVGcolor body, edge, side;
 	NVGcolor bands[5];
 
 	Shade(NVGcolor c) {
@@ -495,6 +547,7 @@ struct Shade {
 		body = c;
 		// Flat: one fill per part, a thin edge only to separate overlapping cables
 		edge = dark ? mixColor(c, look.edgeToWhiteDark) : mixColor(c, -look.edgeToBlack);
+		side = dark ? c : mixColor(c, -look.sideToBlack);
 		// Round: a soft cylinder built from nested bands, lit from the upper left
 		for (int k = 0; k < 5; k++) {
 			bands[k] = mixColor(c, dark ? look.bands[k].mixDark : look.bands[k].mix);
@@ -573,13 +626,73 @@ static void drawShadows(NVGcontext* vg, const std::vector<Entry*>& order, double
 }
 
 
+/** Base (on the panel) and tip (end face) of a boot on screen, rack px */
+static void bootEnds(const Cable& c, int end, double RB, float* bx, float* by, float* tx, float* ty, float* r0, float* r1) {
+	double jx = end ? c.bx() : c.ax(), jy = end ? c.by() : c.ay();
+	camera.project(jx, jy, 0, bx, by);
+	camera.project(jx, jy, LB, tx, ty);
+	*r0 = RB * PX_PER_CM * camera.scale(0);
+	*r1 = RB * PX_PER_CM * camera.scale(LB);
+}
+
+
 static void drawBoot(NVGcontext* vg, Entry* e, int end, double RB, bool round) {
 	const Cable& c = e->cable;
 	Shade sh(e->color);
-	// Seen straight on, the boot is its end face where the cable leaves
-	float x = (end ? c.bx() : c.ax()) * PX_PER_CM;
-	float y = (end ? c.by() : c.ay()) * PX_PER_CM;
-	float r = RB * PX_PER_CM;
+	float bx, by, x, y, r0, r;
+	bootEnds(c, end, RB, &bx, &by, &x, &y, &r0, &r);
+	// In perspective, boots away from the case's centre show their side (straight on, only the end face)
+	float dx = x - bx, dy = y - by, L = std::hypot(dx, dy);
+	if (L > 0.5f) {
+		dx /= L;
+		dy /= L;
+		const float nx = -dy, ny = dx;
+		if (round) {
+			// A short piece of the cable's own round shading, base to tip
+			const float rm = (r0 + r) / 2, k = nx * look.lightX + ny * look.lightY;
+			nvgLineCap(vg, NVG_ROUND);
+			for (int b = 0; b < 4; b++) {
+				const float off = 2 * rm * look.bands[b].shift * k;
+				nvgBeginPath(vg);
+				nvgMoveTo(vg, bx + nx * off, by + ny * off);
+				nvgLineTo(vg, x + nx * off, y + ny * off);
+				nvgStrokeColor(vg, sh.bands[b]);
+				nvgStrokeWidth(vg, 2 * rm * look.bands[b].width);
+				nvgStroke(vg);
+			}
+		}
+		else {
+			nvgBeginPath(vg);
+			nvgMoveTo(vg, bx + nx * r0, by + ny * r0);
+			nvgLineTo(vg, x + nx * r, y + ny * r);
+			nvgLineTo(vg, x - nx * r, y - ny * r);
+			nvgLineTo(vg, bx - nx * r0, by - ny * r0);
+			nvgClosePath(vg);
+			nvgFillColor(vg, sh.side);
+			nvgFill(vg);
+			nvgBeginPath(vg);
+			nvgCircle(vg, bx, by, r0);
+			nvgFill(vg);
+		}
+		nvgStrokeColor(vg, sh.edge);
+		nvgStrokeWidth(vg, 1.f);
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, bx + nx * r0, by + ny * r0);
+		nvgLineTo(vg, x + nx * r, y + ny * r);
+		nvgMoveTo(vg, bx - nx * r0, by - ny * r0);
+		nvgLineTo(vg, x - nx * r, y - ny * r);
+		nvgStroke(vg);
+		// Ribs near the cable end
+		nvgStrokeWidth(vg, std::max(0.7f, r * 0.09f));
+		for (float u : look.ribs) {
+			float mx = bx + (x - bx) * u, my = by + (y - by) * u, rr = r0 + (r - r0) * u;
+			nvgBeginPath(vg);
+			nvgMoveTo(vg, mx + nx * rr, my + ny * rr);
+			nvgLineTo(vg, mx - nx * rr, my - ny * rr);
+			nvgStroke(vg);
+		}
+	}
+	// End face where the cable leaves
 	if (!round) {
 		nvgBeginPath(vg);
 		nvgCircle(vg, x, y, r);
@@ -668,9 +781,12 @@ void Rig::draw(const widget::Widget::DrawArgs& args) {
 	NVGcontext* vg = args.vg;
 	const double RC = I.world.P.rc(), RB = I.world.P.rb();
 	const bool round = settings::cableStyle == 1;
-	const float w = std::max((double) look.minWidth, 2 * RC * PX_PER_CM);
 	for (Entry* e : I.order)
 		densify(e);
+	// Width: nearer the camera is wider (one width per cable, as the prototype)
+	auto widthOf = [&](Entry* e) {
+		return (float) std::max((double) look.minWidth, 2 * RC * PX_PER_CM * e->meanScale);
+	};
 
 	nvgSave(vg);
 	nvgLineJoin(vg, NVG_ROUND);
@@ -719,7 +835,7 @@ void Rig::draw(const widget::Widget::DrawArgs& args) {
 			drawBoot(vg, it.e, it.a, RB, round);
 		}
 		else if (it.type == 1) {
-			drawFlatChunk(vg, it.e, it.a, it.b, w);
+			drawFlatChunk(vg, it.e, it.a, it.b, widthOf(it.e));
 		}
 		else {
 			for (int end = 0; end < 2; end++) {
@@ -728,7 +844,7 @@ void Rig::draw(const widget::Widget::DrawArgs& args) {
 					drawBoot(vg, it.e, end, RB, round);
 				}
 			}
-			drawRoundCable(vg, it.e, w);
+			drawRoundCable(vg, it.e, widthOf(it.e));
 		}
 	}
 	nvgRestore(vg);
@@ -745,34 +861,54 @@ static float distToSegment(float x, float y, const Pt& a, const Pt& b, float* u)
 }
 
 
+PortWidget* Rig::plugAt(math::Vec pos) {
+	Internal& I = *internal;
+	if (!enabled())
+		return NULL;
+	const double RB = I.world.P.rb();
+	float zoom = APP->scene->rackScroll->getZoom();
+	if (!(zoom > 0))
+		zoom = 1;
+	PortWidget* best = NULL;
+	float bestD = 1e9;
+	for (Entry* e : I.order) {
+		if (!e->live)
+			continue;
+		for (int end = 0; end < 2; end++) {
+			Pt b, t;
+			float r0, r1;
+			bootEnds(e->cable, end, RB, &b.x, &b.y, &t.x, &t.y, &r0, &r1);
+			float u;
+			float d = distToSegment(pos.x, pos.y, b, t, &u);
+			if (d < r1 + 1.f / zoom && d < bestD) {
+				bestD = d;
+				// End A is the output
+				best = end ? e->inputPort : e->outputPort;
+			}
+		}
+	}
+	return best;
+}
+
+
 bool Rig::grab(math::Vec pos) {
 	Internal& I = *internal;
 	if (!enabled())
 		return false;
-	const double RB = I.world.P.rb();
-	const float w = std::max((double) look.minWidth, 2 * I.world.P.rc() * PX_PER_CM);
 	float zoom = APP->scene->rackScroll->getZoom();
 	if (!(zoom > 0))
 		zoom = 1;
 	// The plugs belong to the ports (plugging, unplugging, moving a plug)
-	for (Entry* e : I.order) {
-		if (!e->live)
-			continue;
-		const Cable& c = e->cable;
-		for (int end = 0; end < 2; end++) {
-			float jx = (end ? c.bx() : c.ax()) * PX_PER_CM, jy = (end ? c.by() : c.ay()) * PX_PER_CM;
-			if (std::hypot(pos.x - jx, pos.y - jy) < RB * PX_PER_CM + 1.f / zoom)
-				return false;
-		}
-	}
+	if (plugAt(pos))
+		return false;
 	// The topmost cable drawn under the mouse
 	Entry* best = NULL;
 	double bestZ = -1e9;
-	const float tol = w / 2 + 3.f / zoom;
 	for (Entry* e : I.order) {
 		if (!e->live)
 			continue;
 		densify(e);
+		const float tol = std::max((double) look.minWidth, 2 * I.world.P.rc() * PX_PER_CM * e->meanScale) / 2 + 3.f / zoom;
 		const std::vector<Pt>& D = e->dense;
 		for (int i = 0; i + 1 < (int) D.size(); i++) {
 			float u;
@@ -787,9 +923,8 @@ bool Rig::grab(math::Vec pos) {
 	}
 	if (!best)
 		return false;
-	// Hold the nearest free physics point, away from the boots
+	// Hold the nearest free physics point on screen, away from the boots
 	Cable& c = best->cable;
-	double mx = pos.x / PX_PER_CM, my = pos.y / PX_PER_CM;
 	int lo = 3, hi = c.n - 4;
 	if (hi < lo) {
 		lo = 2;
@@ -798,12 +933,17 @@ bool Rig::grab(math::Vec pos) {
 	int bi = lo;
 	double bd = 1e18;
 	for (int i = lo; i <= hi; i++) {
-		double d = std::hypot(c.x[i] - mx, c.y[i] - my);
+		float sx, sy;
+		camera.project(c.x[i], c.y[i], c.z[i], &sx, &sy);
+		double d = std::hypot(sx - pos.x, sy - pos.y);
 		if (d < bd) {
 			bd = d;
 			bi = i;
 		}
 	}
+	// The mouse moves the point at the height it was grabbed
+	double mx, my;
+	camera.unproject(pos.x, pos.y, c.z[bi], &mx, &my);
 	I.grabDx = c.x[bi] - mx;
 	I.grabDy = c.y[bi] - my;
 	I.world.startDrag(&c, bi, c.x[bi], c.y[bi], c.z[bi]);
@@ -815,7 +955,9 @@ void Rig::dragTo(math::Vec pos) {
 	World& W = internal->world;
 	if (!W.dragging)
 		return;
-	W.moveDrag(pos.x / PX_PER_CM + internal->grabDx, pos.y / PX_PER_CM + internal->grabDy, W.drag.tz);
+	double mx, my;
+	camera.unproject(pos.x, pos.y, W.drag.tz, &mx, &my);
+	W.moveDrag(mx + internal->grabDx, my + internal->grabDy, W.drag.tz);
 }
 
 
