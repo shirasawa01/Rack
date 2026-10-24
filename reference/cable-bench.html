@@ -747,6 +747,13 @@ function render() {
     items.push({ t: 0, ci, end: 0, d: project(jacks[c.a].x, jacks[c.a].y, LB * 0.5).d });
     items.push({ t: 0, ci, end: 1, d: project(jacks[c.b].x, jacks[c.b].y, LB * 0.5).d });
     const D = dense[ci], size = SUBD * 2;
+    if (P.style === "round") {
+      // Round: the whole cable in one go, sorted by its mean depth (as in Rack). Pieces clipped to their outlines
+      // left faint lines across the tube at every clip edge (antialiasing of the clip).
+      let d = 0; for (const p of D) d += p.d;
+      items.push({ t: 2, ci, d: d / D.length });
+      return;
+    }
     for (let s = 0; s < D.length - 1; s += size) {
       const e = Math.min(D.length - 1, s + size);
       let d = 0; for (let i = s; i <= e; i++) d += D[i].d;
@@ -755,7 +762,21 @@ function render() {
   });
   items.sort((p, q) => q.d - p.d);
   cables.forEach((c, ci) => { const D = dense[ci]; let d = 0; for (const p of D) d += p.d; c.lw = Math.max(1.4, 2 * RC * sc(d / D.length)); });
-  for (const it of items) it.t === 0 ? drawBoot(it.ci, it.end) : drawChunk(it.ci, it.s, it.e);
+  // a whole round cable can sort below its own plugs: draw those first then
+  const bootDone = new Set();
+  const boot = (ci, end) => { const k = ci * 2 + end; if (!bootDone.has(k)) { bootDone.add(k); drawBoot(ci, end); } };
+  for (const it of items) {
+    if (it.t === 0) boot(it.ci, it.end);
+    else if (it.t === 1) drawChunk(it.ci, it.s, it.e);
+    else { boot(it.ci, 0); boot(it.ci, 1); drawRoundCable(it.ci); }
+  }
+}
+function drawRoundCable(ci) {
+  const c = cables[ci], a = dense[ci], sh = SHADE[c.color], w = c.lw, last = a.length - 1;
+  sh.bands.forEach(([f, col, off], k) => {
+    ctx.strokeStyle = col; ctx.lineWidth = Math.max(0.6, w * f);
+    k === 0 ? polyline(a, 0, last) : shifted(a, 0, last, w * off); ctx.stroke();
+  });
 }
 function polyline(a, s, e, ox = 0, oy = 0) {
   ctx.beginPath(); ctx.moveTo(a[s].x + ox, a[s].y + oy);
@@ -765,36 +786,9 @@ function shifted(a, s, e, f) {
   ctx.beginPath(); ctx.moveTo(a[s].x + a[s].ox * f, a[s].y + a[s].oy * f);
   for (let i = s + 1; i <= e; i++) ctx.lineTo(a[i].x + a[i].ox * f, a[i].y + a[i].oy * f);
 }
-// Clip a piece of cable to its own span, cut square across the tube at both ends.
-// Neighbouring pieces share the same cut, so the shaded bands meet without a seam.
-function clipSpan(a, s, e, R) {
-  const last = a.length - 1;
-  const ext = i => (i === 0 || i === last) ? R : 0.7;
-  ctx.beginPath();
-  for (let i = s; i <= e; i++) {
-    const p = a[i], t = i === s ? -ext(i) : i === e ? ext(i) : 0;
-    const x = p.x + p.tx * t + p.nx * R, y = p.y + p.ty * t + p.ny * R;
-    i === s ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  }
-  for (let i = e; i >= s; i--) {
-    const p = a[i], t = i === s ? -ext(i) : i === e ? ext(i) : 0;
-    ctx.lineTo(p.x + p.tx * t - p.nx * R, p.y + p.ty * t - p.ny * R);
-  }
-  ctx.closePath(); ctx.clip();
-}
 function drawChunk(ci, s, e) {
   const c = cables[ci], a = dense[ci], sh = SHADE[c.color];
   const w = c.lw;
-  if (P.style === "round") {
-    const s0 = Math.max(0, s - 3), e0 = Math.min(a.length - 1, e + 3);
-    ctx.save(); clipSpan(a, s, e, w * 0.85);
-    sh.bands.forEach(([f, col, off], k) => {
-      ctx.strokeStyle = col; ctx.lineWidth = Math.max(0.6, w * f);
-      k === 0 ? polyline(a, s0, e0) : shifted(a, s0, e0, w * off); ctx.stroke();
-    });
-    ctx.restore();
-    return;
-  }
   // Pieces meet square across the tube. Only the body reaches 1px into the next piece (hides the antialiasing hairline);
   // a longer overlap would paint over other cables lying between the two pieces in depth (cables seemed to sink into each other).
   const last = a.length - 1;
