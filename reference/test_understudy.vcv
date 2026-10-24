@@ -1,0 +1,166 @@
+{
+ "version": "2.6.6",
+ "zoom": 1.0,
+ "gridOffset": [
+  -1.0,
+  -0.1
+ ],
+ "modules": [
+  {
+   "id": 1,
+   "plugin": "Understudy",
+   "model": "Maths",
+   "version": "2.0.0",
+   "params": [],
+   "pos": [
+    0,
+    0
+   ]
+  },
+  {
+   "id": 2,
+   "plugin": "Understudy",
+   "model": "Furthrrrr",
+   "version": "2.0.0",
+   "params": [],
+   "pos": [
+    21,
+    0
+   ]
+  },
+  {
+   "id": 3,
+   "plugin": "Understudy",
+   "model": "TokyoGate2",
+   "version": "2.0.0",
+   "params": [],
+   "pos": [
+    56,
+    0
+   ]
+  },
+  {
+   "id": 4,
+   "plugin": "Understudy",
+   "model": "Wogglebug",
+   "version": "2.0.0",
+   "params": [],
+   "pos": [
+    70,
+    0
+   ]
+  },
+  {
+   "id": 5,
+   "plugin": "Understudy",
+   "model": "ZeroCtrl",
+   "version": "2.0.0",
+   "params": [],
+   "pos": [
+    0,
+    1
+   ]
+  },
+  {
+   "id": 6,
+   "plugin": "Understudy",
+   "model": "Maths",
+   "version": "2.0.0",
+   "params": [],
+   "pos": [
+    46,
+    1
+   ]
+  }
+ ],
+ "cables": [
+  {
+   "id": 100,
+   "outputModuleId": 1,
+   "outputId": 0,
+   "inputModuleId": 1,
+   "inputId": 1,
+   "color": "#ff5fa6"
+  },
+  {
+   "id": 101,
+   "outputModuleId": 1,
+   "outputId": 2,
+   "inputModuleId": 1,
+   "inputId": 3,
+   "color": "#ff5fa6"
+  },
+  {
+   "id": 102,
+   "outputModuleId": 2,
+   "outputId": 0,
+   "inputModuleId": 2,
+   "inputId": 2,
+   "color": "#ff5fa6"
+  },
+  {
+   "id": 103,
+   "outputModuleId": 4,
+   "outputId": 1,
+   "inputModuleId": 3,
+   "inputId": 0,
+   "color": "#ff5fa6"
+  },
+  {
+   "id": 104,
+   "outputModuleId": 1,
+   "outputId": 5,
+   "inputModuleId": 2,
+   "inputId": 4,
+   "color": "#ecebe5"
+  },
+  {
+   "id": 105,
+   "outputModuleId": 2,
+   "outputId": 3,
+   "inputModuleId": 3,
+   "inputId": 2,
+   "color": "#ecebe5"
+  },
+  {
+   "id": 106,
+   "outputModuleId": 5,
+   "outputId": 0,
+   "inputModuleId": 1,
+   "inputId": 6,
+   "color": "#ecebe5"
+  },
+  {
+   "id": 107,
+   "outputModuleId": 6,
+   "outputId": 1,
+   "inputModuleId": 2,
+   "inputId": 6,
+   "color": "#ecebe5"
+  },
+  {
+   "id": 108,
+   "outputModuleId": 3,
+   "outputId": 1,
+   "inputModuleId": 6,
+   "inputId": 2,
+   "color": "#2a2a2c"
+  },
+  {
+   "id": 109,
+   "outputModuleId": 5,
+   "outputId": 4,
+   "inputModuleId": 6,
+   "inputId": 5,
+   "color": "#8b56cc"
+  },
+  {
+   "id": 110,
+   "outputModuleId": 4,
+   "outputId": 3,
+   "inputModuleId": 5,
+   "inputId": 2,
+   "color": "#2f72c4"
+  }
+ ]
+}

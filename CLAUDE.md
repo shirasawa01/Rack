@@ -27,10 +27,16 @@ make dep -j8 && make -j8
   フォークにはタグが無い（クラウドからはタグを push できなかった）ので、clone したら上流から取る（上の 2 行目）。v2.6.6 から 2 コミット先までの履歴も要る。
 - 依存の取得に github.com・bitbucket.org・curl.se などが要る。ビルド済みの `dep/` は git に入らない（会話ごとにやり直し、20 分ほど）。
 - 2026-10-24：改造前の状態で、ビルド・画面なしの起動・xvfb での撮影まで通った。
+- 2026-10-24：段階 B〜F を入れた。物理は `src/app/CablePhysics.cpp`（Rack に依存しない）、Rack につなぐ部分と描画は `src/app/CableRig.cpp`。
+  要点と置き場所は `reference/bench_notes.md`（試作を読み直す前にこちら）。
+- **物理を変えたら** `python3 reference/physics_check/check_physics.py`（試作と全点を比べる。差 0 のはず）。
 - 確かめ：画面なしでパッチを開く（`./Rack -d -h <patch>`）。画面は `sh reference/shot_rack.sh [patch] [out.png]`（xvfb の上で起動して撮る。
   設定・ログは `$WORK` に置き、リポジトリを汚さない）。試作の画面と見比べる。
 - ケーブル確認用のパッチ：`reference/test_cables.vcv`（Core モジュールだけ。Fundamental なしの開発モードでも開ける。作り直しは `python3 reference/make_test_patch.py`）。
-- Understudy を一緒に読ませるときは、understudy の `vcv/` を `make RACK_DIR=<Rack-SDK>` でビルドし、`dist/Understudy` を `plugins/` にコピー（開発モード `-d` は `plugins/` を見る）。
+- 触って確かめる：`sh reference/drive_rack.sh`（xdotool でマウスを動かしてから撮る。使い方は先頭のコメント）。
+- Understudy を一緒に読ませるときは、understudy の `vcv/` をこの Rack に向けてビルド（`make -C <understudy>/vcv RACK_DIR=$PWD dist`）し、
+  `PLUGIN=<understudy>/vcv/dist/Understudy sh reference/shot_rack.sh reference/test_understudy.vcv`（`-u` で起動するので `$WORK/plugins` に入れる。
+  手で `-d` だけで起動するなら `plugins/`）。パッチの作り直しは `python3 reference/make_understudy_patch.py`。
 
 ## 手元（Windows）
 - ビルドと触っての確かめはユーザーが MSYS2 MINGW64 で手で打つ。コマンドはそのまま貼れる形で書く。

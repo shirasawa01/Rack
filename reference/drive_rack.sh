@@ -8,6 +8,8 @@ RACK=$(cd "$(dirname "$0")/.." && pwd)
 PATCH=$(realpath "${1:-$RACK/reference/test_cables.vcv}")
 WORK=${WORK:-${TMPDIR:-/tmp}/rack_shot}
 mkdir -p "$WORK"
+# PLUGIN=<understudy>/vcv/dist/Understudy を付けると、そのプラグインも読ませる（-u では $WORK/plugins を見る）
+if [ -n "$PLUGIN" ]; then mkdir -p "$WORK/plugins" && rm -rf "$WORK/plugins/$(basename "$PLUGIN")" && cp -r "$PLUGIN" "$WORK/plugins/"; fi
 OUT=$(realpath "${2:-$WORK/drive.png}")
 cat > "$WORK/settings.json" <<JSON
 {"showTipsOnLaunch": false, "autoCheckUpdates": false, "windowMaximized": false, "windowSize": [1600, 870], "windowPos": [0, 0]${SETTINGS:+, $SETTINGS}}
