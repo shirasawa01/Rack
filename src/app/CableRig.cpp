@@ -88,6 +88,8 @@ struct Pt {
 	double wx, wy, wz;
 	/** Shift toward the light, normal and tangent (screen) */
 	float ox, oy, nx, ny, tx, ty;
+	/** Round style: how strongly the tube shines here (0..1, by its direction in 3D) and catches light from the panel (by its height) */
+	float gloss, bounce;
 };
 
 
@@ -464,6 +466,9 @@ void Rig::step(RackWidget* rack) {
 
 // ---------- drawing (spec chapter 4) ----------
 
+static void light3(double* lx, double* ly, double* lz);
+
+
 static void densify(Entry* e) {
 	const Cable& c = e->cable;
 	if (e->denseVersion == c.version && e->denseCamera == camera.serial)
@@ -507,6 +512,15 @@ static void densify(Entry* e) {
 	e->meanScale = scale / out.size();
 	// Where the light falls across the tube: the light direction projected on the curve's normal.
 	// It changes smoothly along the cable, so the highlight never jumps sides.
+	// How bright the shine is: a tube's highlight is strongest where it runs square to the half-way vector between the light and the eye
+	// (Blinn-Phong, the brightest normal around the tube), and fades where it runs along it: where the cable climbs toward the viewer,
+	// or lies along the light. So the shine comes and goes along the cable as it does in photos.
+	double lx, ly, lz;
+	light3(&lx, &ly, &lz);
+	double hx = lx, hy = ly, hz = lz + 1, hl = std::sqrt(hx * hx + hy * hy + hz * hz);
+	hx /= hl;
+	hy /= hl;
+	hz /= hl;
 	const int m = out.size();
 	for (int i = 0; i < m; i++) {
 		const Pt& A = out[std::max(0, i - 1)];
@@ -524,6 +538,10 @@ static void densify(Entry* e) {
 		out[i].ny = ny;
 		out[i].tx = tx;
 		out[i].ty = ty;
+		double dx = B.wx - A.wx, dy = B.wy - A.wy, dz = B.wz - A.wz, dl = std::sqrt(dx * dx + dy * dy + dz * dz);
+		double c = dl > 0 ? (dx * hx + dy * hy + dz * hz) / dl : 0;
+		out[i].gloss = std::pow(std::max(0.0, 1 - c * c), look.glossPower / 2);
+		out[i].bounce = std::exp(-out[i].wz / look.bounceFade);
 	}
 }
 
@@ -882,30 +900,67 @@ static void drawFlatChunk(NVGcontext* vg, Entry* e, int s, int en, float w) {
 }
 
 
+/** A stroke whose opacity changes along it: runs of points, each one stroke fading from its first point's opacity to its last's.
+Butt ends, so the runs meet without overlapping (overlaps would show as brighter dots). */
+static void fadingStroke(NVGcontext* vg, const std::vector<math::Vec>& p, const std::vector<float>& alpha, NVGcolor color, float width) {
+	nvgLineCap(vg, NVG_BUTT);
+	nvgStrokeWidth(vg, width);
+	const int n = p.size();
+	for (int i = 0; i < n - 1;) {
+		int j = i + 1;
+		while (j < n - 1 && j - i < 16 && std::fabs(alpha[j + 1] - alpha[i]) < 0.06f)
+			j++;
+		if (alpha[i] >= 0.01f || alpha[j] >= 0.01f) {
+			nvgBeginPath(vg);
+			nvgMoveTo(vg, p[i].x, p[i].y);
+			for (int k = i + 1; k <= j; k++)
+				nvgLineTo(vg, p[k].x, p[k].y);
+			NVGcolor c0 = color, c1 = color;
+			c0.a *= alpha[i];
+			c1.a *= alpha[j];
+			nvgStrokePaint(vg, nvgLinearGradient(vg, p[i].x, p[i].y, p[j].x, p[j].y, c0, c1));
+			nvgStroke(vg);
+		}
+		i = j;
+	}
+	nvgLineCap(vg, NVG_ROUND);
+}
+
+
 static void drawRoundCable(NVGcontext* vg, Entry* e, float w) {
-	// One continuous stroke per band: NanoVG cannot clip to the pieces' outlines, so pieces would leave dark rings at the seams
+	// One continuous stroke per band: NanoVG cannot clip to the pieces' outlines, so pieces would leave dark rings at the seams.
+	// The light bands that follow the shine (Band::gloss) fade along the cable instead, on top of the band below them.
 	const std::vector<Pt>& a = e->dense;
+	const int n = a.size();
 	Shade sh(e->color);
+	std::vector<math::Vec> p(n);
+	std::vector<float> alpha(n);
 	for (int k = 0; k < 5; k++) {
-		nvgStrokeColor(vg, sh.bands[k]);
-		nvgStrokeWidth(vg, std::max(look.minBandWidth, w * look.bands[k].width));
-		polyline(vg, a, 0, a.size() - 1, w * look.bands[k].shift);
-		nvgStroke(vg);
+		const Look::Band& b = look.bands[k];
+		const float width = std::max(look.minBandWidth, w * b.width);
+		if (b.gloss > 0) {
+			for (int i = 0; i < n; i++) {
+				p[i] = math::Vec(a[i].x + a[i].ox * w * b.shift, a[i].y + a[i].oy * w * b.shift);
+				alpha[i] = 1 - b.gloss * (1 - a[i].gloss);
+			}
+			fadingStroke(vg, p, alpha, sh.bands[k], width);
+		}
+		else {
+			nvgStrokeColor(vg, sh.bands[k]);
+			nvgStrokeWidth(vg, width);
+			polyline(vg, a, 0, n - 1, w * b.shift);
+			nvgStroke(vg);
+		}
 		if (k == 0 && w * look.rimWidth >= 0.5f) {
 			// Along the dark side, away from the light. Where the cable runs along the light it slides under band 1.
-			nvgBeginPath(vg);
-			for (size_t i = 0; i < a.size(); i++) {
+			// Light from the panel: fainter as the cable rises away from it.
+			for (int i = 0; i < n; i++) {
 				float l = a[i].ox * a[i].nx + a[i].oy * a[i].ny;
 				float off = -clampT(l / 0.35f, -1.f, 1.f) * w * look.rimShift;
-				float x = a[i].x + a[i].nx * off, y = a[i].y + a[i].ny * off;
-				if (i == 0)
-					nvgMoveTo(vg, x, y);
-				else
-					nvgLineTo(vg, x, y);
+				p[i] = math::Vec(a[i].x + a[i].nx * off, a[i].y + a[i].ny * off);
+				alpha[i] = 1 - look.rimBounce * (1 - a[i].bounce);
 			}
-			nvgStrokeColor(vg, sh.rim);
-			nvgStrokeWidth(vg, w * look.rimWidth);
-			nvgStroke(vg);
+			fadingStroke(vg, p, alpha, sh.rim, w * look.rimWidth);
 		}
 	}
 }

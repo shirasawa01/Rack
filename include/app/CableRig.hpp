@@ -59,17 +59,23 @@ struct Look {
 		float alpha;
 		/** Shift toward the light, relative to the width */
 		float shift;
+		/** How much the band follows the shine along the cable: 0 the same everywhere, 1 gone where the tube does not shine */
+		float gloss;
 	};
 	Band bands[5] = {
-		{1.0f, -0.5f, -0.35f, 1.f, 0.f},
-		{0.84f, -0.26f, -0.1f, 1.f, 0.07f},
-		{0.64f, 0.f, 0.f, 1.f, 0.13f},
-		{0.4f, 0.2f, 0.12f, 1.f, 0.19f},
-		{0.17f, 0.7f, 0.4f, 0.9f, 0.25f},
+		{1.0f, -0.5f, -0.35f, 1.f, 0.f, 0.f},
+		{0.84f, -0.26f, -0.1f, 1.f, 0.07f, 0.f},
+		{0.64f, 0.f, 0.f, 1.f, 0.13f, 0.f},
+		{0.4f, 0.2f, 0.12f, 1.f, 0.19f, 0.6f},
+		{0.17f, 0.7f, 0.4f, 0.9f, 0.25f, 0.9f},
 	};
+	/** Sharpness of the shine (Blinn-Phong exponent): higher, the shine fades sooner as the cable turns */
+	float glossPower = 40.f;
 	float minBandWidth = 0.6f;
 	/** Round style: light thrown back from the panel along the cable's dark side (between bands 0 and 1) */
 	float rimWidth = 0.09f, rimShift = 0.43f, rimMix = -0.12f, rimMixDark = 0.1f;
+	/** It fades with height, exp(-z / bounceFade), down to 1 - rimBounce */
+	float rimBounce = 0.5f, bounceFade = 4.f;
 
 	/** Round style: the boot as a solid of revolution, base (on the panel) to where the cable leaves.
 	z is a fraction of LB, r a fraction of RB. Body, a chamfered shoulder facing the viewer, then the strain relief. */
