@@ -325,6 +325,9 @@ json_t* Port::toJson() {
 		try {
 			std::string deviceName = device->getName();
 			json_object_set_new(rootJ, "deviceName", json_string(deviceName.c_str()));
+			// This fork: which side of a same-named pair it was (Bluetooth headsets show as a mic and a headphone with one name)
+			json_object_set_new(rootJ, "deviceInputs", json_boolean(device->getNumInputs() > 0));
+			json_object_set_new(rootJ, "deviceOutputs", json_boolean(device->getNumOutputs() > 0));
 		}
 		catch (Exception& e) {
 			WARN("Audio port could not get device name: %s", e.what());
@@ -348,16 +351,34 @@ void Port::fromJson(json_t* rootJ) {
 	json_t* deviceNameJ = json_object_get(rootJ, "deviceName");
 	if (deviceNameJ) {
 		std::string deviceName = json_string_value(deviceNameJ);
+		// This fork: several devices can share a name (AirPods: a mic and a headphone). Opening the mic by mistake
+		// switches a Bluetooth headset to its call mode, and the output turns into loud noise. So among the devices with
+		// the name, prefer the one with the same sides as when saved, and in older patches one with outputs.
+		json_t* inputsJ = json_object_get(rootJ, "deviceInputs");
+		json_t* outputsJ = json_object_get(rootJ, "deviceOutputs");
+		int bestDeviceId = -1;
+		int bestScore = -1;
 		// Search for device ID with equal name
 		for (int deviceId : getDeviceIds()) {
 			std::string deviceNameCurr = getDeviceName(deviceId);
 			if (deviceNameCurr == "")
 				continue;
 			if (deviceNameCurr == deviceName) {
-				setDeviceId(deviceId);
-				break;
+				bool inputs = getDeviceNumInputs(deviceId) > 0;
+				bool outputs = getDeviceNumOutputs(deviceId) > 0;
+				int score;
+				if (inputsJ && outputsJ)
+					score = (inputs == json_boolean_value(inputsJ) && outputs == json_boolean_value(outputsJ)) ? 2 : 0;
+				else
+					score = outputs ? 1 : 0;
+				if (score > bestScore) {
+					bestScore = score;
+					bestDeviceId = deviceId;
+				}
 			}
 		}
+		if (bestDeviceId >= 0)
+			setDeviceId(bestDeviceId);
 	}
 
 	json_t* sampleRateJ = json_object_get(rootJ, "sampleRate");
