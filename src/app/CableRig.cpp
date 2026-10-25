@@ -106,6 +106,8 @@ struct Entry {
 	std::vector<Pt> dense;
 	/** Mean perspective scale along the cable, for its width */
 	double meanScale = 1;
+	/** Opacity of the shadows other cables and boots cast on each dense point (round style) */
+	std::vector<float> cast;
 
 	~Entry() {
 		if (pendingJ)
@@ -123,6 +125,8 @@ struct Rig::Internal {
 	bool partsValid = false;
 	/** Grab offset, cm */
 	double grabDx = 0, grabDy = 0;
+	/** What the cast shadows were worked out for */
+	size_t castKey = 0;
 
 	Entry* entry(CableWidget* cw) {
 		auto it = entries.find(cw);
@@ -537,13 +541,24 @@ static NVGcolor mixColor(NVGcolor c, float t) {
 }
 
 
+template <typename T>
+static T clampT(T x, T a, T b) {
+	return std::max(a, std::min(b, x));
+}
+
+
+static bool isDark(NVGcolor c) {
+	return (c.r + c.g + c.b) / 3 * 255 < look.darkBelow;
+}
+
+
 struct Shade {
-	NVGcolor body, edge, side;
+	NVGcolor body, edge, side, rim;
 	NVGcolor bands[5];
 
 	Shade(NVGcolor c) {
 		c.a = 1.f;
-		bool dark = (c.r + c.g + c.b) / 3 * 255 < look.darkBelow;
+		bool dark = isDark(c);
 		body = c;
 		// Flat: one fill per part, a thin edge only to separate overlapping cables
 		edge = dark ? mixColor(c, look.edgeToWhiteDark) : mixColor(c, -look.edgeToBlack);
@@ -553,8 +568,36 @@ struct Shade {
 			bands[k] = mixColor(c, dark ? look.bands[k].mixDark : look.bands[k].mix);
 			bands[k].a = look.bands[k].alpha;
 		}
+		rim = mixColor(c, dark ? look.rimMixDark : look.rimMix);
 	}
 };
+
+
+/** Light in 3D, toward the light, normalized */
+static void light3(double* lx, double* ly, double* lz) {
+	double l = std::sqrt(look.light3[0] * look.light3[0] + look.light3[1] * look.light3[1] + look.light3[2] * look.light3[2]);
+	*lx = look.light3[0] / l;
+	*ly = look.light3[1] / l;
+	*lz = look.light3[2] / l;
+}
+
+
+/** Path around two circles and the tangents between them: a tapered tube seen at a slant */
+static void hull(NVGcontext* vg, float x0, float y0, float r0, float x1, float y1, float r1) {
+	nvgBeginPath(vg);
+	float dx = x1 - x0, dy = y1 - y0, d = std::hypot(dx, dy);
+	if (d <= std::fabs(r0 - r1) + 1e-3f) {
+		if (r0 >= r1)
+			nvgCircle(vg, x0, y0, r0);
+		else
+			nvgCircle(vg, x1, y1, r1);
+		return;
+	}
+	float a = std::atan2(dy, dx), b = std::acos((r0 - r1) / d);
+	nvgArc(vg, x0, y0, r0, a + b, a + 2 * M_PI - b, NVG_CW);
+	nvgArc(vg, x1, y1, r1, a - b, a + b, NVG_CW);
+	nvgClosePath(vg);
+}
 
 
 static void shadowPoint(double x, double y, double z, float* sx, float* sy) {
@@ -580,6 +623,14 @@ static void drawShadows(NVGcontext* vg, const std::vector<Entry*>& order, double
 	bool round = settings::cableStyle == 1;
 	for (Entry* e : order) {
 		const Cable& c = e->cable;
+		// Where the boots stand on the panel, a soft dark ring (the light cannot reach in there from any side)
+		for (int end = 0; end < 2; end++) {
+			float x = (end ? c.bx() : c.ax()) * PX_PER_CM, y = (end ? c.by() : c.ay()) * PX_PER_CM, r = RB * PX_PER_CM;
+			nvgBeginPath(vg);
+			nvgCircle(vg, x, y, r * look.contactReach);
+			nvgFillPaint(vg, nvgRadialGradient(vg, x, y, r * 0.9f, r * look.contactReach, nvgRGBAf(0, 0, 0, look.contactAlpha * sa), nvgRGBAf(0, 0, 0, 0)));
+			nvgFill(vg);
+		}
 		// Plug boots
 		nvgLineCap(vg, NVG_ROUND);
 		nvgStrokeColor(vg, nvgRGBAf(0, 0, 0, look.shadowAlpha * sa));
@@ -636,7 +687,114 @@ static void bootEnds(const Cable& c, int end, double RB, float* bx, float* by, f
 }
 
 
+/** Round style: the boot as the solid of revolution in Look::profile, part by part from the panel out,
+in the cable's nested bands: along the sides, and around the shoulder that faces the viewer */
+static void drawRoundBoot(NVGcontext* vg, Entry* e, int end, double RB) {
+	const Cable& c = e->cable;
+	const double jx = end ? c.bx() : c.ax(), jy = end ? c.by() : c.ay();
+	NVGcolor col = e->color;
+	col.a = 1.f;
+	Shade sh(col);
+	const float gx = look.lightX, gy = look.lightY;
+	const int N = sizeof(look.profile) / sizeof(look.profile[0]);
+	float X[N], Y[N], R[N];
+	for (int k = 0; k < N; k++) {
+		const double z = look.profile[k].z * LB;
+		camera.project(jx, jy, z, &X[k], &Y[k]);
+		R[k] = look.profile[k].r * RB * PX_PER_CM * camera.scale(z);
+	}
+	// A dark edge around the body, to stand out from the panel
+	NVGcolor outline = sh.bands[0];
+	outline.a = 0.85f;
+	hull(vg, X[0], Y[0], R[0] + 0.6f, X[2], Y[2], R[2] + 0.6f);
+	nvgFillColor(vg, outline);
+	nvgFill(vg);
+	for (int k = 0; k < N - 1; k++) {
+		const double dz = (look.profile[k + 1].z - look.profile[k].z) * LB, dr = (look.profile[k].r - look.profile[k + 1].r) * RB;
+		const double h = std::hypot(dz, dr);
+		if (h <= 0)
+			continue;
+		// How much the surface faces the viewer
+		const float sa = dr / h;
+		// Bands shift across the part: the light's direction on screen without its share along the part's axis
+		// (straight on, the axis is a point and the whole direction counts)
+		const float ax = X[k + 1] - X[k], ay = Y[k + 1] - Y[k], al = std::hypot(ax, ay);
+		const float rm = std::max(R[k], R[k + 1]);
+		float px = gx, py = gy;
+		if (al > 1e-3f) {
+			const float ux = ax / al, uy = ay / al, along = gx * ux + gy * uy, t = std::min(1.f, al / rm);
+			px -= ux * along * t;
+			py -= uy * along * t;
+		}
+		const float pl = std::hypot(px, py);
+		if (pl > 1e-3f) {
+			px /= pl;
+			py /= pl;
+		}
+		const float mw = look.minBandWidth / 2;
+		if (sa < look.faceAbove) {
+			// A side: the cable's own bands along the part, the lighter ones shifted toward the light
+			for (int b = 0; b < 5; b++) {
+				const float w = look.bands[b].width, o0 = 2 * R[k] * look.bands[b].shift * pl, o1 = 2 * R[k + 1] * look.bands[b].shift * pl;
+				hull(vg, X[k] + px * o0, Y[k] + py * o0, std::max(mw, R[k] * w), X[k + 1] + px * o1, Y[k + 1] + py * o1, std::max(mw, R[k + 1] * w));
+				nvgFillColor(vg, sh.bands[b]);
+				nvgFill(vg);
+			}
+		}
+		else {
+			// A face toward the viewer (the shoulder): the bands wrap around it, as across a cable laid in a ring,
+			// so it shows a lit crescent toward the light. What lies inside is covered by the next parts.
+			const float T = R[k] - R[k + 1];
+			for (int b = 0; b < 5; b++) {
+				const float r = R[k + 1] + T * look.bands[b].width, o = T * look.bands[b].shift * pl;
+				hull(vg, X[k] + px * o, Y[k] + py * o, r, X[k + 1] + px * o, Y[k + 1] + py * o, r);
+				nvgFillColor(vg, sh.bands[b]);
+				nvgFill(vg);
+			}
+		}
+	}
+	// A highlight on the shoulder, toward the light
+	{
+		const int k = 3;
+		const float rs = (R[k - 1] + R[k]) / 2, sx = X[k] + gx * rs, sy = Y[k] + gy * rs, sr = look.shine * RB * PX_PER_CM;
+		NVGcolor hi = mixColor(col, 0.85f), clear = hi;
+		hi.a = look.shineAlpha;
+		clear.a = 0.f;
+		nvgBeginPath(vg);
+		nvgCircle(vg, sx, sy, sr);
+		nvgFillPaint(vg, nvgRadialGradient(vg, sx, sy, 0.f, sr, hi, clear));
+		nvgFill(vg);
+	}
+	// Ribs on the strain relief, and the dark gap where the cable comes out
+	const Look::Ring& r0 = look.profile[N - 2];
+	const Look::Ring& r1 = look.profile[N - 1];
+	NVGcolor groove = sh.bands[0];
+	groove.a = 0.55f;
+	nvgStrokeColor(vg, groove);
+	nvgStrokeWidth(vg, std::max(0.6f, (float) (0.05 * RB * PX_PER_CM)));
+	for (float u : look.reliefRibs) {
+		const float t = (u - r0.z) / (r1.z - r0.z);
+		const double z = u * LB;
+		float x, y;
+		camera.project(jx, jy, z, &x, &y);
+		nvgBeginPath(vg);
+		nvgCircle(vg, x, y, (r0.r + (r1.r - r0.r) * t) * RB * PX_PER_CM * camera.scale(z));
+		nvgStroke(vg);
+	}
+	groove.a = 0.8f;
+	nvgStrokeColor(vg, groove);
+	nvgStrokeWidth(vg, 0.8f);
+	nvgBeginPath(vg);
+	nvgCircle(vg, X[N - 1], Y[N - 1], R[N - 1]);
+	nvgStroke(vg);
+}
+
+
 static void drawBoot(NVGcontext* vg, Entry* e, int end, double RB, bool round) {
+	if (round) {
+		drawRoundBoot(vg, e, end, RB);
+		return;
+	}
 	const Cable& c = e->cable;
 	Shade sh(e->color);
 	float bx, by, x, y, r0, r;
@@ -647,33 +805,17 @@ static void drawBoot(NVGcontext* vg, Entry* e, int end, double RB, bool round) {
 		dx /= L;
 		dy /= L;
 		const float nx = -dy, ny = dx;
-		if (round) {
-			// A short piece of the cable's own round shading, base to tip
-			const float rm = (r0 + r) / 2, k = nx * look.lightX + ny * look.lightY;
-			nvgLineCap(vg, NVG_ROUND);
-			for (int b = 0; b < 4; b++) {
-				const float off = 2 * rm * look.bands[b].shift * k;
-				nvgBeginPath(vg);
-				nvgMoveTo(vg, bx + nx * off, by + ny * off);
-				nvgLineTo(vg, x + nx * off, y + ny * off);
-				nvgStrokeColor(vg, sh.bands[b]);
-				nvgStrokeWidth(vg, 2 * rm * look.bands[b].width);
-				nvgStroke(vg);
-			}
-		}
-		else {
-			nvgBeginPath(vg);
-			nvgMoveTo(vg, bx + nx * r0, by + ny * r0);
-			nvgLineTo(vg, x + nx * r, y + ny * r);
-			nvgLineTo(vg, x - nx * r, y - ny * r);
-			nvgLineTo(vg, bx - nx * r0, by - ny * r0);
-			nvgClosePath(vg);
-			nvgFillColor(vg, sh.side);
-			nvgFill(vg);
-			nvgBeginPath(vg);
-			nvgCircle(vg, bx, by, r0);
-			nvgFill(vg);
-		}
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, bx + nx * r0, by + ny * r0);
+		nvgLineTo(vg, x + nx * r, y + ny * r);
+		nvgLineTo(vg, x - nx * r, y - ny * r);
+		nvgLineTo(vg, bx - nx * r0, by - ny * r0);
+		nvgClosePath(vg);
+		nvgFillColor(vg, sh.side);
+		nvgFill(vg);
+		nvgBeginPath(vg);
+		nvgCircle(vg, bx, by, r0);
+		nvgFill(vg);
 		nvgStrokeColor(vg, sh.edge);
 		nvgStrokeWidth(vg, 1.f);
 		nvgBeginPath(vg);
@@ -693,34 +835,13 @@ static void drawBoot(NVGcontext* vg, Entry* e, int end, double RB, bool round) {
 		}
 	}
 	// End face where the cable leaves
-	if (!round) {
-		nvgBeginPath(vg);
-		nvgCircle(vg, x, y, r);
-		nvgFillColor(vg, sh.body);
-		nvgFill(vg);
-		nvgStrokeColor(vg, sh.edge);
-		nvgStrokeWidth(vg, 1.f);
-		nvgStroke(vg);
-		return;
-	}
-	// The prototype's radial gradient from a highlight shifted toward the light (stops 0, 0.35, 0.75, 1),
-	// built from NanoVG's two-color gradients
-	float hx = x + look.lightX * r * 0.4f, hy = y + look.lightY * r * 0.4f;
 	nvgBeginPath(vg);
 	nvgCircle(vg, x, y, r);
-	nvgFillPaint(vg, nvgRadialGradient(vg, hx, hy, r * 0.35f, r * 0.75f, sh.bands[3], sh.bands[2]));
+	nvgFillColor(vg, sh.body);
 	nvgFill(vg);
-	nvgBeginPath(vg);
-	nvgCircle(vg, hx, hy, r * 0.35f);
-	nvgFillPaint(vg, nvgRadialGradient(vg, hx, hy, r * 0.05f, r * 0.35f, sh.bands[4], sh.bands[3]));
-	nvgFill(vg);
-	NVGcolor rim = sh.bands[0];
-	NVGcolor rimClear = rim;
-	rimClear.a = 0.f;
-	nvgBeginPath(vg);
-	nvgCircle(vg, x, y, r);
-	nvgFillPaint(vg, nvgRadialGradient(vg, x, y, r * 0.75f, r, rimClear, rim));
-	nvgFill(vg);
+	nvgStrokeColor(vg, sh.edge);
+	nvgStrokeWidth(vg, 1.f);
+	nvgStroke(vg);
 }
 
 
@@ -770,7 +891,147 @@ static void drawRoundCable(NVGcontext* vg, Entry* e, float w) {
 		nvgStrokeWidth(vg, std::max(look.minBandWidth, w * look.bands[k].width));
 		polyline(vg, a, 0, a.size() - 1, w * look.bands[k].shift);
 		nvgStroke(vg);
+		if (k == 0 && w * look.rimWidth >= 0.5f) {
+			// Along the dark side, away from the light. Where the cable runs along the light it slides under band 1.
+			nvgBeginPath(vg);
+			for (size_t i = 0; i < a.size(); i++) {
+				float l = a[i].ox * a[i].nx + a[i].oy * a[i].ny;
+				float off = -clampT(l / 0.35f, -1.f, 1.f) * w * look.rimShift;
+				float x = a[i].x + a[i].nx * off, y = a[i].y + a[i].ny * off;
+				if (i == 0)
+					nvgMoveTo(vg, x, y);
+				else
+					nvgLineTo(vg, x, y);
+			}
+			nvgStrokeColor(vg, sh.rim);
+			nvgStrokeWidth(vg, w * look.rimWidth);
+			nvgStroke(vg);
+		}
 	}
+}
+
+
+/** The shadows that cables and boots cast on each cable's dense points (Entry::cast), in the 3D light like the panel shadows.
+With `meanZ` (round style, whole cables drawn in that order), only a cable drawn above casts on one below, at least as if lying on it,
+so a shadow never falls on the cable that covers its caster. */
+static void castShadows(const std::vector<Entry*>& order, double RC, double RB, const std::vector<double>* meanZ) {
+	double lx, ly, lz;
+	light3(&lx, &ly, &lz);
+	// Shadow shift on a lower surface per cm of height (toward the lower right)
+	const double sx = -lx / lz, sy = -ly / lz;
+	const float sa = settings::cableShadow;
+	const int CH = 8;
+	struct Box {
+		double x0, y0, x1, y1, z0, z1;
+	};
+	std::vector<std::vector<Box>> boxes(order.size());
+	for (size_t o = 0; o < order.size(); o++) {
+		const std::vector<Pt>& D = order[o]->dense;
+		order[o]->cast.assign(D.size(), 0.f);
+		for (int s = 0; s + 1 < (int) D.size(); s += CH) {
+			int en = std::min((int) D.size() - 1, s + CH);
+			Box b = {1e9, 1e9, -1e9, -1e9, 1e9, -1e9};
+			for (int i = s; i <= en; i++) {
+				b.x0 = std::min(b.x0, D[i].wx);
+				b.y0 = std::min(b.y0, D[i].wy);
+				b.x1 = std::max(b.x1, D[i].wx);
+				b.y1 = std::max(b.y1, D[i].wy);
+				b.z0 = std::min(b.z0, D[i].wz);
+				b.z1 = std::max(b.z1, D[i].wz);
+			}
+			boxes[o].push_back(b);
+		}
+	}
+	// A soft-edged stripe of radius `r` at `dist` from the shadow's middle, `dz` above the receiver
+	auto strength = [&](double dist, double r, double dz) {
+		const double p = r * look.castSoft + dz * look.castSpread;
+		const double f = clampT((r + p - dist) / (2 * p), 0.0, 1.0);
+		// Cables lying on each other still part a little; nothing from the same height
+		const double g = clampT((dz - 0.5 * RC) / RC, 0.0, 1.0);
+		return (float) (look.castAlpha * sa * std::exp(-dz / look.shadowFade) * f * g);
+	};
+	auto segDist = [](double px, double py, double ax, double ay, double bx, double by, double* t) {
+		double dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+		*t = l2 > 0 ? clampT(((px - ax) * dx + (py - ay) * dy) / l2, 0.0, 1.0) : 0.0;
+		return std::hypot(px - ax - dx * *t, py - ay - dy * *t);
+	};
+	for (size_t r = 0; r < order.size(); r++) {
+		std::vector<Pt>& RD = order[r]->dense;
+		std::vector<float>& out = order[r]->cast;
+		// Boots: upright cylinders from the panel to LB
+		for (size_t o = 0; o < order.size(); o++) {
+			const Cable& c = order[o]->cable;
+			for (int end = 0; end < 2; end++) {
+				double jx = end ? c.bx() : c.ax(), jy = end ? c.by() : c.ay();
+				for (size_t i = 0; i < RD.size(); i++) {
+					const double top = LB - RD[i].wz;
+					if (top <= 0 || std::fabs(RD[i].wx - jx) > RB * 2 + top * sx + 1 || std::fabs(RD[i].wy - jy) > RB * 2 + top * sy + 1)
+						continue;
+					double t;
+					double d = segDist(RD[i].wx, RD[i].wy, jx, jy, jx + sx * top, jy + sy * top, &t);
+					out[i] = std::max(out[i], strength(d, RB, std::max(top * t, 0.5 * RC + RC)));
+				}
+			}
+		}
+		// Other cables, piece against piece first
+		for (size_t o = 0; o < order.size(); o++) {
+			if (o == r)
+				continue;
+			if (meanZ && !((*meanZ)[o] > (*meanZ)[r] || ((*meanZ)[o] == (*meanZ)[r] && o > r)))
+				continue;
+			const double floor = meanZ ? 2 * RC : -1e9;
+			const std::vector<Pt>& CD = order[o]->dense;
+			for (size_t rb = 0; rb < boxes[r].size(); rb++) {
+				const Box& B = boxes[r][rb];
+				for (size_t cb = 0; cb < boxes[o].size(); cb++) {
+					const Box& C = boxes[o][cb];
+					const double dzMax = std::max(floor, C.z1 - B.z0), dzMin = std::max(floor, std::max(0.0, C.z0 - B.z1));
+					if (dzMax <= 0.5 * RC)
+						continue;
+					const double reach = RC * (1 + look.castSoft) + dzMax * look.castSpread;
+					if (C.x0 + sx * dzMin - reach > B.x1 || C.x1 + sx * dzMax + reach < B.x0 || C.y0 + sy * dzMin - reach > B.y1 || C.y1 + sy * dzMax + reach < B.y0)
+						continue;
+					const int s = rb * CH, en = std::min((int) RD.size() - 1, s + CH);
+					const int cs = cb * CH, cen = std::min((int) CD.size() - 1, cs + CH);
+					for (int i = s; i <= en; i++) {
+						const Pt& P = RD[i];
+						for (int j = cs; j < cen; j++) {
+							const Pt& Q0 = CD[j];
+							const Pt& Q1 = CD[j + 1];
+							const double d0 = std::max(floor, Q0.wz - P.wz), d1 = std::max(floor, Q1.wz - P.wz);
+							if (d0 <= 0.5 * RC && d1 <= 0.5 * RC)
+								continue;
+							double t;
+							double d = segDist(P.wx, P.wy, Q0.wx + sx * std::max(d0, 0.0), Q0.wy + sy * std::max(d0, 0.0), Q1.wx + sx * std::max(d1, 0.0), Q1.wy + sy * std::max(d1, 0.0), &t);
+							out[i] = std::max(out[i], strength(d, RC, d0 + (d1 - d0) * t));
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+
+/** The cast shadows on dense points s..en of a cable: black along it, no wider than the cable,
+each step fading from its start's opacity to its end's */
+static void drawCast(NVGcontext* vg, Entry* e, int s, int en, float w) {
+	const std::vector<Pt>& a = e->dense;
+	const std::vector<float>& k = e->cast;
+	if (k.size() != a.size())
+		return;
+	nvgLineCap(vg, NVG_BUTT);
+	nvgStrokeWidth(vg, w);
+	for (int i = s; i < en; i++) {
+		if (k[i] < 0.005f && k[i + 1] < 0.005f)
+			continue;
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, a[i].x, a[i].y);
+		nvgLineTo(vg, a[i + 1].x, a[i + 1].y);
+		nvgStrokePaint(vg, nvgLinearGradient(vg, a[i].x, a[i].y, a[i + 1].x, a[i + 1].y, nvgRGBAf(0, 0, 0, k[i]), nvgRGBAf(0, 0, 0, k[i + 1])));
+		nvgStroke(vg);
+	}
+	nvgLineCap(vg, NVG_ROUND);
 }
 
 
@@ -783,6 +1044,27 @@ void Rig::draw(const widget::Widget::DrawArgs& args) {
 	const bool round = settings::cableStyle == 1;
 	for (Entry* e : I.order)
 		densify(e);
+	// Cast shadows only change when a cable moves, the camera or the shadow setting changes
+	size_t key = std::hash<double>()(settings::cableShadow) ^ (camera.serial * 0x9e3779b97f4a7c15ULL) ^ round;
+	for (Entry* e : I.order)
+		key = key * 1000003 ^ std::hash<const void*>()(e) ^ e->cable.version;
+	if (key != I.castKey) {
+		I.castKey = key;
+		if (settings::cableShadow > 0) {
+			// Round cables are drawn whole by their mean height (below)
+			std::vector<double> meanZ;
+			for (Entry* e : I.order) {
+				double z = 0;
+				for (const Pt& p : e->dense)
+					z += p.wz;
+				meanZ.push_back(z / std::max<size_t>(1, e->dense.size()));
+			}
+			castShadows(I.order, RC, RB, round ? &meanZ : NULL);
+		}
+		else
+			for (Entry* e : I.order)
+				e->cast.clear();
+	}
 	// Width: nearer the camera is wider (one width per cable, as the prototype)
 	auto widthOf = [&](Entry* e) {
 		return (float) std::max((double) look.minWidth, 2 * RC * PX_PER_CM * e->meanScale);
@@ -836,6 +1118,7 @@ void Rig::draw(const widget::Widget::DrawArgs& args) {
 		}
 		else if (it.type == 1) {
 			drawFlatChunk(vg, it.e, it.a, it.b, widthOf(it.e));
+			drawCast(vg, it.e, it.a, it.b, widthOf(it.e));
 		}
 		else {
 			for (int end = 0; end < 2; end++) {
@@ -845,6 +1128,7 @@ void Rig::draw(const widget::Widget::DrawArgs& args) {
 				}
 			}
 			drawRoundCable(vg, it.e, widthOf(it.e));
+			drawCast(vg, it.e, 0, it.e->dense.size() - 1, widthOf(it.e));
 		}
 	}
 	nvgRestore(vg);

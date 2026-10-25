@@ -68,6 +68,34 @@ struct Look {
 		{0.17f, 0.7f, 0.4f, 0.9f, 0.25f},
 	};
 	float minBandWidth = 0.6f;
+	/** Round style: light thrown back from the panel along the cable's dark side (between bands 0 and 1) */
+	float rimWidth = 0.09f, rimShift = 0.43f, rimMix = -0.12f, rimMixDark = 0.1f;
+
+	/** Round style: the boot as a solid of revolution, base (on the panel) to where the cable leaves.
+	z is a fraction of LB, r a fraction of RB. Body, a chamfered shoulder facing the viewer, then the strain relief. */
+	struct Ring {
+		float z, r;
+	};
+	Ring profile[6] = {
+		{0.f, 1.f},
+		{0.6f, 0.97f},
+		{0.65f, 0.92f},
+		{0.69f, 0.7f},
+		{0.72f, 0.64f},
+		{1.f, 0.58f},
+	};
+	/** Ribs on the strain relief, as fractions of LB */
+	float reliefRibs[3] = {0.8f, 0.87f, 0.94f};
+	/** Parts of the boot facing the viewer more than this (sine of the angle from the axis) get the bands around them, others along */
+	float faceAbove = 0.5f;
+	/** A soft highlight on the shoulder, toward the light: radius (of RB) and opacity */
+	float shine = 0.24f, shineAlpha = 0.3f;
+	/** Dark ring on the panel around a boot's base: out to this many RB */
+	float contactReach = 1.55f, contactAlpha = 0.45f;
+	/** Shadows that cables and boots cast on the cables below them */
+	float castAlpha = 0.5f;
+	/** Their soft edge: half width = caster radius * castSoft + height between the two * castSpread */
+	float castSoft = 0.45f, castSpread = 0.1f;
 };
 
 extern Look look;
