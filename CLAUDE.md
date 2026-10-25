@@ -44,6 +44,8 @@ make dep -j8 && make -j8
 - ビルドと触っての確かめはユーザーが MSYS2 MINGW64 で手で打つ。コマンドはそのまま貼れる形で書く。
   手順は understudy の `docs/cable_physics_plan.md` の 3.（`C:\dev\Rack-src` に clone、`make run` で起動）。
 - いつもの Rack Free・Rack SDK（`C:\dev\Rack-SDK`）はそのまま。改造版の設定とプラグインは `C:\dev\Rack-src` の中だけ。
+- 2026-10-25：手元の **M1 MacBook Air** でも動かす（ユーザーは Mac の初心者）。手順は understudy の `docs/cable_physics_plan.md` の 3b.（`~/dev/Rack-src`）。
+  改造のコードに OS で分けた所は作らない（Windows・Mac・Linux で同じに動かす）。
 
 ## 使用量
 - クラウドも Pro の使用量の枠で動く。区切り（段階）ごとに新しい会話にし、ログ・画像を読む量を控える。
