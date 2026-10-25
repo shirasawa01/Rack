@@ -39,6 +39,8 @@ make dep -j8 && make -j8
 - Understudy を一緒に読ませるときは、understudy の `vcv/` をこの Rack に向けてビルド（`make -C <understudy>/vcv RACK_DIR=$PWD dist`）し、
   `PLUGIN=<understudy>/vcv/dist/Understudy sh reference/shot_rack.sh reference/test_understudy.vcv`（`-u` で起動するので `$WORK/plugins` に入れる。
   手で `-d` だけで起動するなら `plugins/`）。パッチの作り直しは `python3 reference/make_understudy_patch.py`。
+- 2026-10-25：**パネルの見た目**（ノブ・ジャックの穴の立体化、パネルの質感）を `src/app/PanelLook.cpp` に。全モジュールに効く（ウィジェットの型と SVG だけを見る）。
+  効く条件・数字の置き場所は `reference/bench_notes.md` の「パネルの見た目」。
 
 ## 手元（Windows）
 - ビルドと触っての確かめはユーザーが MSYS2 MINGW64 で手で打つ。コマンドはそのまま貼れる形で書く。

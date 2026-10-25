@@ -46,6 +46,9 @@ bool cablePerspective = true;
 float caseWidth = 104;
 float caseHeight = 6;
 float cameraDistance = 58;
+bool panelLook = true;
+bool knobPerspective = true;
+float panelTexture = 0.5;
 float rackBrightness = 1.0;
 float spotlightBrightness = 0.2;
 float spotlightRadius = 300.0;
@@ -185,6 +188,9 @@ json_t* toJson() {
 	json_object_set_new(rootJ, "caseWidth", json_real(caseWidth));
 	json_object_set_new(rootJ, "caseHeight", json_real(caseHeight));
 	json_object_set_new(rootJ, "cameraDistance", json_real(cameraDistance));
+	json_object_set_new(rootJ, "panelLook", json_boolean(panelLook));
+	json_object_set_new(rootJ, "knobPerspective", json_boolean(knobPerspective));
+	json_object_set_new(rootJ, "panelTexture", json_real(panelTexture));
 
 	json_object_set_new(rootJ, "rackBrightness", json_real(rackBrightness));
 
@@ -434,6 +440,18 @@ void fromJson(json_t* rootJ) {
 	json_t* cameraDistanceJ = json_object_get(rootJ, "cameraDistance");
 	if (cameraDistanceJ)
 		cameraDistance = math::clamp((float) json_number_value(cameraDistanceJ), 30.f, 200.f);
+
+	json_t* panelLookJ = json_object_get(rootJ, "panelLook");
+	if (panelLookJ)
+		panelLook = json_boolean_value(panelLookJ);
+
+	json_t* knobPerspectiveJ = json_object_get(rootJ, "knobPerspective");
+	if (knobPerspectiveJ)
+		knobPerspective = json_boolean_value(knobPerspectiveJ);
+
+	json_t* panelTextureJ = json_object_get(rootJ, "panelTexture");
+	if (panelTextureJ)
+		panelTexture = math::clamp((float) json_number_value(panelTextureJ), 0.f, 1.f);
 
 	json_t* rackBrightnessJ = json_object_get(rootJ, "rackBrightness");
 	if (rackBrightnessJ)

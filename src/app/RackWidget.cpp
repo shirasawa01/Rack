@@ -7,6 +7,7 @@
 
 #include <app/RackWidget.hpp>
 #include <app/CableRig.hpp>
+#include <app/PanelLook.hpp>
 #include <widget/TransparentWidget.hpp>
 #include <app/RailWidget.hpp>
 #include <app/Scene.hpp>
@@ -64,6 +65,11 @@ struct ModuleContainer : widget::Widget {
 		// Draw ModuleWidget shadows
 		Widget::drawLayer(args, -1);
 
+		// Panel look: every panel, then the knobs' and jacks' shadows, then the parts, then the knobs
+		if (panellook::enabled()) {
+			panellook::drawModules(this, args);
+			return;
+		}
 		Widget::draw(args);
 	}
 
@@ -237,6 +243,17 @@ void RackWidget::onButton(const ButtonEvent& e) {
 		if (internal->rig->grab(e.pos)) {
 			e.consume(internal->cableContainer);
 			return;
+		}
+	}
+	// The panel look draws knob tops in perspective, off their widgets: a press on a knob's top goes to the knob
+	if (e.action == GLFW_PRESS) {
+		ParamWidget* kw = panellook::knobAt(this, e.pos);
+		if (kw) {
+			ButtonEvent e2 = e;
+			e2.pos = kw->box.size.div(2);
+			kw->onButton(e2);
+			if (e.isConsumed())
+				return;
 		}
 	}
 	OpaqueWidget::onButton(e);

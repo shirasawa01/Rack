@@ -4,6 +4,7 @@
 #include <osdialog.h>
 
 #include <app/ModuleWidget.hpp>
+#include <app/PanelLook.hpp>
 #include <app/Scene.hpp>
 #include <engine/Engine.hpp>
 #include <plugin/Plugin.hpp>
@@ -210,7 +211,18 @@ void ModuleWidget::draw(const DrawArgs& args) {
 		nvgAlpha(args.vg, 0.33);
 	}
 
-	Widget::draw(args);
+	// Panel look (this fork): knobs and jacks in relief; in the rack, panels and parts come in separate passes
+	if (panellook::enabled()) {
+		panellook::drawModule(this, args);
+		if (panellook::panelPass()) {
+			nvgResetScissor(args.vg);
+			return;
+		}
+	}
+	else {
+		panellook::restoreShadows(this);
+		Widget::draw(args);
+	}
 
 	// Meter
 	if (module && settings::cpuMeter) {

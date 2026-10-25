@@ -80,6 +80,12 @@ extern float caseWidth;
 extern float caseHeight;
 /** Camera distance from the panel, cm */
 extern float cameraDistance;
+/** Panel look (this fork, app/PanelLook.hpp): knobs and jacks in relief, with shadows, and the panels' surface. false draws them as the modules' SVGs do. */
+extern bool panelLook;
+/** Knob tops drawn through the cables' camera (needs cablePhysics and cablePerspective) */
+extern bool knobPerspective;
+/** The panels' grain, sheen and edges, in the range [0, 1] */
+extern float panelTexture;
 extern float rackBrightness;
 extern float spotlightBrightness;
 extern float spotlightRadius;

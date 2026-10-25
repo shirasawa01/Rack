@@ -80,6 +80,15 @@ Rig* getRig() {
 }
 
 
+math::Vec project(math::Vec pos, double z, double* scale) {
+	if (scale)
+		*scale = camera.scale(z);
+	float x, y;
+	camera.project(pos.x / PX_PER_CM, pos.y / PX_PER_CM, z, &x, &y);
+	return math::Vec(x, y);
+}
+
+
 /** A point of the smoothed curve that is drawn */
 struct Pt {
 	/** Rack px */
@@ -182,6 +191,30 @@ static size_t partsHash(RackWidget* rack) {
 }
 
 
+bool partSize(ParamWidget* pw, double* R, double* H) {
+	double w = pw->box.size.x / PX_PER_CM, h = pw->box.size.y / PX_PER_CM;
+	// Displays and touch surfaces made of params are not knobs
+	if (!(w > 0 && h > 0 && w < 3.5 && h < 3.5))
+		return false;
+	if (dynamic_cast<SliderKnob*>(pw)) {
+		// Fader caps stand low; a cylinder is a rough fit for their long slot anyway
+		*R = std::min(w, h) / 2;
+		*H = 0.5;
+	}
+	else if (dynamic_cast<Knob*>(pw)) {
+		// 1.6 cm for a trimpot up to 2.2 cm for a large knob
+		*R = (w + h) / 4;
+		*H = std::min(2.2, std::max(1.6, 1.6 + (2 * *R - 0.6) / 2.1 * 0.6));
+	}
+	else {
+		// Switches and buttons
+		*R = (w + h) / 4;
+		*H = 1.0;
+	}
+	return true;
+}
+
+
 /** Knobs, switches and jacks as upright cylinders, taken from the module widgets so that new modules need no work. */
 static void buildParts(RackWidget* rack, std::vector<Obstacle>& parts) {
 	parts.clear();
@@ -190,27 +223,10 @@ static void buildParts(RackWidget* rack, std::vector<Obstacle>& parts) {
 		for (ParamWidget* pw : mw->getParams()) {
 			if (!pw->isVisible())
 				continue;
-			double w = pw->box.size.x / PX_PER_CM, h = pw->box.size.y / PX_PER_CM;
-			// Displays and touch surfaces made of params are not knobs
-			if (!(w > 0 && h > 0 && w < 3.5 && h < 3.5))
+			double R, H;
+			if (!partSize(pw, &R, &H))
 				continue;
 			math::Vec c = mpos.plus(pw->box.getCenter()).div(PX_PER_CM);
-			double R, H;
-			if (dynamic_cast<SliderKnob*>(pw)) {
-				// Fader caps stand low; a cylinder is a rough fit for their long slot anyway
-				R = std::min(w, h) / 2;
-				H = 0.5;
-			}
-			else if (dynamic_cast<Knob*>(pw)) {
-				// 1.6 cm for a trimpot up to 2.2 cm for a large knob
-				R = (w + h) / 4;
-				H = std::min(2.2, std::max(1.6, 1.6 + (2 * R - 0.6) / 2.1 * 0.6));
-			}
-			else {
-				// Switches and buttons
-				R = (w + h) / 4;
-				H = 1.0;
-			}
 			parts.push_back(Obstacle{c.x, c.y, R, H, -1, -1});
 		}
 		for (PortWidget* pw : mw->getPorts()) {

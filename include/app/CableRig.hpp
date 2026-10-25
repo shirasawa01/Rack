@@ -11,6 +11,7 @@ namespace app {
 struct RackWidget;
 struct CableWidget;
 struct PortWidget;
+struct ParamWidget;
 
 
 namespace cablephysics {
@@ -139,6 +140,12 @@ struct Rig {
 
 /** settings::cablePhysics */
 bool enabled();
+/** Where a point `z` cm above the panel at `pos` (rack px) shows through the cables' camera, and how much it is magnified there.
+Without perspective, `pos` and 1. Used by the panel look (PanelLook.hpp) for the knob tops and the jack holes. */
+math::Vec project(math::Vec pos, double z, double* scale = NULL);
+/** A param as an upright cylinder (spec 5.1): radius and height, cm. False for params that are not panel parts (displays, touch surfaces).
+The same numbers the cables collide with, so a cable lies on a knob's top as it is drawn. */
+bool partSize(ParamWidget* pw, double* R, double* H);
 /** The rack's Rig, or NULL */
 Rig* getRig();
 

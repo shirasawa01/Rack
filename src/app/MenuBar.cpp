@@ -551,6 +551,12 @@ struct ViewButton : MenuButton {
 			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::cameraDistance, 30, 200, 58, 1, "Camera distance", " cm")));
 		}));
 
+		menu->addChild(createSubmenuItem("Panel look", "", [=](ui::Menu* menu) {
+			menu->addChild(createBoolPtrMenuItem("Knobs and jacks in relief", "", &settings::panelLook));
+			menu->addChild(createBoolPtrMenuItem("Knob tops in perspective", "", &settings::knobPerspective));
+			menu->addChild(new CablePhysicsSlider(new CablePhysicsQuantity(&settings::panelTexture, 0, 1, 0.5, 100, "Panel surface", "%")));
+		}));
+
 		RackBrightnessSlider* rackBrightnessSlider = new RackBrightnessSlider;
 		rackBrightnessSlider->box.size.x = 250.0;
 		menu->addChild(rackBrightnessSlider);
